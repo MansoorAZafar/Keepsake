@@ -1,6 +1,6 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 
-const PASSWORD_KEY_BYTES = 64;
+const PASSWORD_KEY_BYTES = Number(process.env.PASSWORD_KEY_BYTES) ?? 64;
 
 export function hashPassword(password: string): string {
     const salt = randomBytes(16).toString("hex");
