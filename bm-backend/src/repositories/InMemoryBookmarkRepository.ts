@@ -53,6 +53,8 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
         }
     }
 
+    async close() {}
+
     async listCollections() {
         return [...this.collections.values()];
     }

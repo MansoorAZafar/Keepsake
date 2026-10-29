@@ -59,7 +59,7 @@ The dependency direction is intentional:
 - The service depends on the repository interface.
 - The app composition root chooses the concrete repository.
 
-That final choice is in `src/app.ts`: production could pass `NeonBookmarkRepository` while tests pass a fresh memory repository. Storage details do not leak into route/controller code.
+That final choice is in `src/server.ts`: the running API passes `NeonBookmarkRepository`, while tests can pass a fresh memory repository to `createApp`. Storage details do not leak into route/controller code.
 
 ## 4. Collection passwords and sessions
 
@@ -90,17 +90,20 @@ The controller accepts a URL with or without `http://` or `https://`. Missing sc
 
 Zod validates user input at the HTTP boundary. `HttpError` carries expected status codes for application failures. The final Express error handler converts Zod issues to a 400 response, `HttpError` to its selected status, and unexpected exceptions to a generic 500 without returning internal stack details.
 
-## 6. In-memory adapter and Neon migration
+## 6. Neon/PostgreSQL adapter and migrations
 
-The current adapter uses three Maps: collections, links, and sessions. It seeds one `design` collection and five example links; its demo password is `design-demo`. Process restart clears user-created collections, links, and sessions.
+The running API uses `NeonBookmarkRepository`, which implements the same Promise-based `BookmarkRepository` interface with parameterized `pg` queries. `createApp` still defaults to `InMemoryBookmarkRepository` for tests that need fast, isolated data. The in-memory adapter seeds one `design` collection and five example links; its demo password is `design-demo`. The Neon database starts empty and survives process restarts.
 
-To move to Neon:
+The schema migration in `src/db/migrations.ts` creates:
 
-1. Define relational tables for collections, links, and sessions, including foreign keys and indexes on `collection_id` and `token_hash`.
-2. Add migrations and configure the Neon connection string through environment secrets.
-3. Implement the same `BookmarkRepository` operations with asynchronous SQL/ORM calls.
-4. Pass the new adapter from `createApp`; keep controllers, services, response shapes, and UI requests stable.
-5. Add migration and deployment checks before removing the memory adapter.
+- `collections`, including a visibility/password consistency constraint;
+- `links`, with a cascading collection foreign key and collection/time index;
+- `collection_sessions`, with a cascading collection foreign key, unique token hashes, and collection index;
+- `schema_migrations`, which records applied schema versions.
+
+At startup, the server applies migrations using `DATABASE_URL_UNPOOLED` (Neon's direct connection). A transaction-scoped advisory lock prevents two server instances from applying the same migration concurrently. API queries use `DATABASE_URL`, Neon’s pooled URL. Both values are populated locally by `neon env pull`; neither belongs in Git. The startup migration is atomic, and its version record makes later starts a no-op until a new version is added.
+
+Collection deletion relies on PostgreSQL `ON DELETE CASCADE` to remove its links and sessions. Password hashing and session expiry checks remain in `BookmarkService`, so switching storage does not change the API routes or DTOs.
 
 Password hashes and token hashes remain hashes in the database. Never migrate raw passwords or raw session tokens.
 

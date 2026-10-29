@@ -1,7 +1,7 @@
 {
     "name": "bm-backend",
     "version": "1.0.0",
-    "description": "A small TypeScript REST API for collections and saved links. Its in-memory repository makes the first version easy to understand and lets us replace storage with Neon/PostgreSQL later without rewriting the routes or business rules.",
+    "description": "A TypeScript REST API for collections and saved links, backed by Neon PostgreSQL through a replaceable repository interface.",
     "keywords": [],
     "license": "ISC",
     "author": "",
@@ -19,15 +19,18 @@
         "lint:fix": "oxlint --fix"
     },
     "dependencies": {
+        "@neon/config": "^1.9.5",
         "cors": "^2.8.6",
         "dotenv": "^18.0.9",
         "express": "^5.3.0",
+        "pg": "^8.23.1",
         "zod": "^4.6.7"
     },
     "devDependencies": {
         "@types/cors": "^2.8.19",
         "@types/express": "^5.0.6",
         "@types/node": "^26.6.6",
+        "@types/pg": "^8.23.1",
         "@types/supertest": "^7.2.1",
         "oxfmt": "^0.75.0",
         "oxlint": "^1.90.0",

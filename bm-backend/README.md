@@ -1,6 +1,6 @@
 # Bookmark Manager API
 
-An accountless TypeScript REST API for collections and saved links. Private collections are unlocked with a password; public collections can be browsed without one. The first storage adapter uses in-memory `Map`s; data and sessions reset whenever the process restarts.
+An accountless TypeScript REST API for collections and saved links. Private collections are unlocked with a password; public collections can be browsed without one. The running API stores collections, links, and sessions in Neon Postgres. The in-memory adapter remains available for isolated tests.
 
 ## Run locally
 
@@ -9,7 +9,7 @@ npm install
 npm run dev
 ```
 
-The API starts on `http://localhost:3001`. Copy `.env.example` to `.env` to configure `PORT` and `FRONTEND_ORIGIN`. The seeded `design` collection password is `design-demo`.
+The API starts on `http://localhost:3001`. `PORT` and `FRONTEND_ORIGIN` can be configured in `.env`. Run `neon env pull` after linking the project to populate `DATABASE_URL` (pooled application connections), `DATABASE_URL_UNPOOLED` (schema migrations), and `NEON_BRANCH`. The server requires both database URLs and runs the versioned schema migration before listening. Do not commit `.env` or `.neon`.
 
 ## Endpoints
 
@@ -33,11 +33,11 @@ All successful JSON responses use `{ "data": ... }`; validation failures return 
 
 ## Architecture and request flow
 
-`routes -> controllers -> service -> BookmarkRepository -> InMemoryBookmarkRepository`
+`routes -> controllers -> service -> BookmarkRepository -> NeonBookmarkRepository`
 
-Routes connect HTTP paths and verbs to controller methods. Controllers parse route parameters, validate request bodies with Zod, extract bearer tokens, and translate results into HTTP responses. `BookmarkService` contains the rules: visibility-aware reads, password verification, deletion authorization, session expiry, URL normalization, and link titles. The `BookmarkRepository` interface is the persistence boundary. Its current Map-backed implementation seeds the design example, hashes are stored instead of raw credentials, and collection deletion cascades to its links and sessions. The seed collection's local deletion password is `design-delete-demo`.
+Routes connect HTTP paths and verbs to controller methods. Controllers parse route parameters, validate request bodies with Zod, extract bearer tokens, and translate results into HTTP responses. `BookmarkService` contains the rules: visibility-aware reads, password verification, deletion authorization, session expiry, URL normalization, and link titles. The `BookmarkRepository` interface is the persistence boundary. The app composition in `src/server.ts` selects the Neon adapter for the running API; tests can still pass `InMemoryBookmarkRepository`. Password and session token hashes are persisted, never plaintext credentials. Foreign keys cascade collection deletion to its links and sessions.
 
-The repository interface returns Promises even though Maps are synchronous. A Neon/Postgres implementation can use asynchronous queries behind the same service contract. Keep SQL and Prisma/Drizzle details inside that adapter; routes and UI should continue using the same API DTOs.
+The Neon adapter uses parameterized `pg` queries. `src/db/migrations.ts` applies a transaction-locked, versioned schema migration through `DATABASE_URL_UNPOOLED`; request traffic uses the pooled `DATABASE_URL`. This keeps SQL and database details behind the repository contract while routes and UI continue using the same API DTOs.
 
 `ARCHITECTURE.md` explains the model types, access flow, interface contract, and migration path in more depth.
 
