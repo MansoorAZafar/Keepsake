@@ -26,4 +26,5 @@ export interface BookmarkRepository {
     createSession(input: Omit<CollectionSession, "id" | "createdAt">): Promise<CollectionSession>;
     findSessionByTokenHash(tokenHash: string): Promise<CollectionSession | undefined>;
     deleteSessionByTokenHash(tokenHash: string): Promise<void>;
+    close(): Promise<void>;
 }
