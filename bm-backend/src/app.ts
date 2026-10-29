@@ -13,7 +13,9 @@ export function createApp(repository: BookmarkRepository = new InMemoryBookmarkR
     const service = new BookmarkService(repository);
     const controller = new BookmarkController(service);
 
-    app.use(cors({ origin: process.env.FRONTEND_ORIGIN ?? "http://localhost:5173" }));
+    const allowedOrigins = process.env.FRONTEND_ORIGIN?.split(",") ?? ["http://localhost:5173"];
+
+    app.use(cors({ origin: allowedOrigins }));
     app.use(express.json({ limit: "32kb" }));
     app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
     app.use("/api", createBookmarkRouter(controller));
