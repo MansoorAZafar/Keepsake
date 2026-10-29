@@ -36,6 +36,31 @@ async function request<T>(path: string, init: RequestInit = {}, accessToken?: st
             headers,
             signal: init.signal ?? controller.signal,
         });
+        if (response.status === 204) return undefined as T;
+
+        let payload: {
+            data?: T;
+            error?: string;
+            details?: Array<{ message: string }>;
+        };
+        try {
+            payload = (await response.json()) as typeof payload;
+        } catch {
+            throw new ApiError(
+                response.ok
+                    ? "The API returned an invalid response."
+                    : `The API returned an unreadable error (${response.status}).`,
+                response.status,
+            );
+        }
+        if (!response.ok) {
+            const detail = payload.details?.map((item) => item.message).join(" ");
+            throw new ApiError(
+                detail || payload.error || "The request could not be completed.",
+                response.status,
+            );
+        }
+        return payload.data as T;
     } catch (error) {
         if (controller.signal.aborted)
             throw new ApiError(
@@ -46,21 +71,6 @@ async function request<T>(path: string, init: RequestInit = {}, accessToken?: st
     } finally {
         window.clearTimeout(timeoutId);
     }
-    if (response.status === 204) return undefined as T;
-
-    const payload = (await response.json()) as {
-        data?: T;
-        error?: string;
-        details?: Array<{ message: string }>;
-    };
-    if (!response.ok) {
-        const detail = payload.details?.map((item) => item.message).join(" ");
-        throw new ApiError(
-            detail || payload.error || "The request could not be completed.",
-            response.status,
-        );
-    }
-    return payload.data as T;
 }
 
 export const api = {

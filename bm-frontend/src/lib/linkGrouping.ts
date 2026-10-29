@@ -16,15 +16,18 @@ export function getDomain(url: string): string {
 
 export function filterAndGroupLinks(links: SavedLink[], query: string): DomainGroup[] {
     const normalizedQuery = query.trim().toLowerCase();
-    const filteredLinks = links.filter((link) =>
-        `${link.title} ${link.url} ${link.note} ${getDomain(link.url)}`
-            .toLowerCase()
-            .includes(normalizedQuery),
-    );
     const grouped = new Map<string, SavedLink[]>();
 
-    for (const link of filteredLinks) {
+    for (const link of links) {
         const domain = getDomain(link.url);
+        if (
+            normalizedQuery &&
+            !`${link.title} ${link.url} ${link.note} ${domain}`
+                .toLowerCase()
+                .includes(normalizedQuery)
+        ) {
+            continue;
+        }
         const domainLinks = grouped.get(domain) ?? [];
         domainLinks.push(link);
         grouped.set(domain, domainLinks);

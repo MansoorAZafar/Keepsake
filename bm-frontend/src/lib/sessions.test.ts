@@ -27,4 +27,12 @@ describe("browser collection sessions", () => {
         removeSession("active");
         expect(readSession("active")).toBeNull();
     });
+
+    it("removes malformed stored session data", () => {
+        const key = "keepsake.session.design";
+        window.sessionStorage.setItem(key, "not-json");
+
+        expect(readSession("design")).toBeNull();
+        expect(window.sessionStorage.getItem(key)).toBeNull();
+    });
 });

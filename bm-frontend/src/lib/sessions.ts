@@ -15,6 +15,11 @@ export function readSession(collectionId: string): CollectionSession | null {
         }
         return session;
     } catch {
+        try {
+            window.sessionStorage.removeItem(sessionKey(collectionId));
+        } catch {
+            // Session storage may be unavailable in restricted browser contexts.
+        }
         return null;
     }
 }
