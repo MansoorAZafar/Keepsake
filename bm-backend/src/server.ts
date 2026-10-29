@@ -33,7 +33,9 @@ const repository = isInMemoryDB
     ? new InMemoryBookmarkRepository()
     : new NeonBookmarkRepository(databaseUrl!);
 const server = createApp(repository).listen(port, () =>
-    console.log(`Bookmark API listening at http://localhost:${port} ${isInMemoryDB ? "(In Memory DB)" : "(Neon PostgreSQL)"}`),
+    console.log(
+        `Bookmark API listening at http://localhost:${port} ${isInMemoryDB ? "(In Memory DB)" : "(Neon PostgreSQL)"}`,
+    ),
 );
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {

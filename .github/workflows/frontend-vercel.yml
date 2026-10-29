@@ -1,4 +1,4 @@
-name: Frontend CI and Vercel Preview
+name: Frontend CI and Vercel Production
 
 on:
   pull_request:
@@ -8,10 +8,6 @@ on:
       - "bm-frontend/**"
       - ".github/workflows/frontend-vercel.yml"
   push:
-    branches: ["**"]
-    paths:
-      - "bm-frontend/**"
-      - ".github/workflows/frontend-vercel.yml"
 
 permissions:
   contents: read
@@ -53,14 +49,12 @@ jobs:
       - name: Build frontend
         run: npm run build
 
-  deploy-preview:
-    name: Vercel preview
+  deploy-production:
+    name: Vercel production
     needs: checks
-    if: >-
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    environment: Preview
+    environment: Production
     defaults:
       run:
         working-directory: bm-frontend
@@ -85,11 +79,11 @@ jobs:
       - name: Install Vercel CLI
         run: npm install --global vercel@50
 
-      - name: Pull Vercel Preview settings
-        run: vercel pull --yes --environment=preview --git-branch="$GITHUB_HEAD_REF" --token="$VERCEL_TOKEN"
+      - name: Pull Vercel Production settings
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
 
-      - name: Build Vercel preview
-        run: vercel build --token="$VERCEL_TOKEN"
+      - name: Build Vercel production bundle
+        run: vercel build --prod --token="$VERCEL_TOKEN"
 
-      - name: Deploy Vercel preview
-        run: vercel deploy --prebuilt --token="$VERCEL_TOKEN"
+      - name: Deploy Vercel production
+        run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
