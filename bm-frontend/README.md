@@ -1,32 +1,47 @@
-# React + TypeScript + Vite
+# Keepsake frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Keepsake is a React 19 + TypeScript bookmark manager built with Vite, React Router, and Material UI. Collections appear as folders; each collection groups saved links by normalized domain.
 
-Currently, two official plugins are available:
+## Run locally
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Install frontend dependencies and start the Vite server:
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-    "$schema": "./node_modules/oxlint/configuration_schema.json",
-    "plugins": ["react", "typescript", "oxc"],
-    "options": {
-        "typeAware": true
-    },
-    "rules": {
-        "react/rules-of-hooks": "error",
-        "react/only-export-components": ["warn", { "allowConstantExport": true }]
-    }
-}
+```sh
+npm ci
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+In a second terminal, start the API from the sibling `bm-backend` directory:
+
+```sh
+npm ci
+npm run dev
+```
+
+The frontend uses `http://localhost:3001/api` by default. Set `VITE_API_URL` in a local `.env` file to override it. The API's `FRONTEND_ORIGIN` must match the Vite origin.
+
+## Project structure
+
+```text
+src/
+  app/         Router and shared MUI theme
+  components/  Domain groups and collection actions
+  lib/         API client, session handling, backup and grouping helpers
+  pages/       Home and collection detail routes
+  types/       Frontend API contracts
+```
+
+The pages own route-level state and user flows. Presentational components render focused parts of those flows. The API client unwraps the backend's `{ data }` response envelope and maps failures to `ApiError`. Collection sessions live in tab-scoped `sessionStorage`.
+
+The backend is a separate project; frontend changes should not change its routes or response shapes. Public collection links can be read without a session. Private collection links require one. Link edits in either visibility mode require the session issued to the creator or by unlocking a private collection.
+
+## Checks
+
+```sh
+npm run lint
+npm run format:check
+npm test
+npm run build
+```
+
+`format:check` checks the checked-in frontend skills as well as application files. To check only application source, run `npx oxfmt --check src`.

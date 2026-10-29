@@ -1,53 +1,36 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
+import Alert from "@mui/material/Alert";
+import Avatar from "@mui/material/Avatar";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
+import CircularProgress from "@mui/material/CircularProgress";
+import Container from "@mui/material/Container";
+import IconButton from "@mui/material/IconButton";
+import InputAdornment from "@mui/material/InputAdornment";
+import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
-import ArrowOutwardRoundedIcon from "@mui/icons-material/ArrowOutwardRounded";
 import AutoStoriesOutlinedIcon from "@mui/icons-material/AutoStoriesOutlined";
-import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import DeleteForeverOutlinedIcon from "@mui/icons-material/DeleteForeverOutlined";
 import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
-import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
-import {
-    Accordion,
-    AccordionDetails,
-    AccordionSummary,
-    Alert,
-    Avatar,
-    Box,
-    Button,
-    Chip,
-    CircularProgress,
-    Container,
-    Dialog,
-    DialogActions,
-    DialogContent,
-    DialogTitle,
-    IconButton,
-    InputAdornment,
-    Stack,
-    TextField,
-    Typography,
-} from "@mui/material";
 import { api, ApiError } from "../lib/api";
 import { filterAndGroupLinks } from "../lib/linkGrouping";
 import { readSession, removeSession, writeSession } from "../lib/sessions";
+import { DomainGroups } from "../components/DomainGroups";
+import { DeleteCollectionDialog } from "../components/DeleteCollectionDialog";
+import { AddLinkDialog } from "../components/AddLinkDialog";
 import type {
     CollectionSession,
     CollectionSummary,
     CreateLinkInput,
     SavedLink,
 } from "../types/api";
-
-function linkHref(url: string) {
-    return /^[a-z][a-z\d+.-]*:\/\//i.test(url) ? url : `https://${url}`;
-}
-
-function formatSavedAt(date: string) {
-    return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(date));
-}
 
 export function RepositoryDetailPage() {
     const navigate = useNavigate();
@@ -86,16 +69,12 @@ function CollectionDetail({
     const [password, setPassword] = useState("");
     const [unlockError, setUnlockError] = useState("");
     const [pageError, setPageError] = useState("");
+    const [linkLoadAttempt, setLinkLoadAttempt] = useState(0);
     const [isLoadingCollection, setIsLoadingCollection] = useState(true);
-    const [isLoadingLinks, setIsLoadingLinks] = useState(false);
+    const [isLoadingLinks, setIsLoadingLinks] = useState(true);
     const [isUnlocking, setIsUnlocking] = useState(false);
     const [isAddingLink, setIsAddingLink] = useState(false);
-    const [isSavingLink, setIsSavingLink] = useState(false);
-    const [isDeleting, setIsDeleting] = useState(false);
-    const [deletePassword, setDeletePassword] = useState("");
-    const [deleteError, setDeleteError] = useState("");
-    const [linkError, setLinkError] = useState("");
-    const [newLink, setNewLink] = useState<CreateLinkInput>({ url: "", title: "", note: "" });
+    const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
     // @todo, add a duplicate button
 
@@ -120,13 +99,8 @@ function CollectionDetail({
     }, [collectionId]);
 
     useEffect(() => {
-        if (!session && collection?.visibility !== "public") {
-            setLinks([]);
-            return;
-        }
+        if (!session && collection?.visibility !== "public") return;
         let isCurrent = true;
-        setIsLoadingLinks(true);
-        setPageError("");
         api.listLinks(collectionId, session?.accessToken)
             .then((result) => {
                 if (isCurrent) setLinks(result);
@@ -140,6 +114,7 @@ function CollectionDetail({
                 ) {
                     removeSession(collectionId);
                     setSession(null);
+                    setLinks([]);
                     setUnlockError("Your session expired. Enter the collection password again.");
                 } else
                     setPageError(
@@ -152,17 +127,19 @@ function CollectionDetail({
         return () => {
             isCurrent = false;
         };
-    }, [collectionId, session, collection?.visibility]);
+    }, [collectionId, session, collection?.visibility, linkLoadAttempt]);
 
     const groups = useMemo(() => filterAndGroupLinks(links, query), [links, query]);
 
     async function unlockCollection(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
         setUnlockError("");
+        setPageError("");
         setIsUnlocking(true);
         try {
             const createdSession = await api.createSession(collectionId, password);
             writeSession(collectionId, createdSession);
+            setIsLoadingLinks(true);
             setSession(createdSession);
             setPassword("");
         } catch (error) {
@@ -176,25 +153,10 @@ function CollectionDetail({
         }
     }
 
-    async function saveLink(event: FormEvent<HTMLFormElement>) {
-        event.preventDefault();
-        if (!session) return;
-        setIsSavingLink(true);
-        setLinkError("");
-        try {
-            const saved = await api.createLink(collectionId, session.accessToken, {
-                url: newLink.url.trim(),
-                title: newLink.title?.trim() || undefined,
-                note: newLink.note?.trim() || undefined,
-            });
-            setLinks((current) => [saved, ...current]);
-            setNewLink({ url: "", title: "", note: "" });
-            setIsAddingLink(false);
-        } catch (error) {
-            setLinkError(error instanceof ApiError ? error.message : "Could not save the link.");
-        } finally {
-            setIsSavingLink(false);
-        }
+    async function saveLink(input: CreateLinkInput) {
+        if (!session) throw new Error("Unlock the collection before adding a link.");
+        const saved = await api.createLink(collectionId, session.accessToken, input);
+        setLinks((current) => [saved, ...current]);
     }
 
     async function removeLink(linkId: string) {
@@ -213,6 +175,14 @@ function CollectionDetail({
         removeSession(collectionId);
         setSession(null);
         setLinks([]);
+        setPageError("");
+        setIsLoadingLinks(collection?.visibility === "public");
+    }
+
+    function retryLinkLoad() {
+        setPageError("");
+        setIsLoadingLinks(true);
+        setLinkLoadAttempt((attempt) => attempt + 1);
     }
 
     function downloadJson() {
@@ -231,23 +201,6 @@ function CollectionDetail({
         }.json`;
         anchor.click();
         URL.revokeObjectURL(url);
-    }
-
-    async function deleteCurrentCollection(event: FormEvent<HTMLFormElement>) {
-        event.preventDefault();
-        setDeleteError("");
-        setIsDeleting(true);
-        try {
-            await api.deleteCollection(collectionId, deletePassword);
-            removeSession(collectionId);
-            setIsDeleting(false);
-
-            navigateHome();
-        } catch (error) {
-            setDeleteError(
-                error instanceof ApiError ? error.message : "Could not delete the collection.",
-            );
-        }
     }
 
     if (isLoadingCollection)
@@ -283,7 +236,12 @@ function CollectionDetail({
 
     return (
         <Box component="main" className="library-page">
+            <Box component="a" className="skip-link" href="#main-content">
+                Skip to content
+            </Box>
             <Container
+                id="main-content"
+                tabIndex={-1}
                 maxWidth={false}
                 sx={{
                     maxWidth: 1000,
@@ -325,7 +283,9 @@ function CollectionDetail({
                     <Typography component="h1" className="hero-title">
                         {collection.name}
                     </Typography>
-                    <Typography className="welcome-copy" sx={{ maxWidth: "100%" }}>{collection.description}</Typography>
+                    <Typography className="welcome-copy" sx={{ maxWidth: "100%" }}>
+                        {collection.description}
+                    </Typography>
                     <Chip
                         icon={
                             collection.visibility === "private" ? <LockOutlinedIcon /> : undefined
@@ -362,6 +322,7 @@ function CollectionDetail({
                                 fullWidth
                                 required
                                 type="password"
+                                name="collectionPassword"
                                 label="Collection password"
                                 value={password}
                                 onChange={(event) => setPassword(event.target.value)}
@@ -415,27 +376,32 @@ function CollectionDetail({
                                     startIcon={<DownloadRoundedIcon />}
                                     variant="outlined"
                                     size="small"
-                                    sx={{ flex: "0 0 auto", minWidth: "max-content", whiteSpace: "nowrap" }}
+                                    sx={{
+                                        flex: "0 0 auto",
+                                        minWidth: "max-content",
+                                        whiteSpace: "nowrap",
+                                    }}
                                 >
                                     Download JSON
                                 </Button>
                                 {session && (
                                     <Button
-                                        onClick={() => {
-                                            setLinkError("");
-                                            setIsAddingLink(true);
-                                        }}
+                                        onClick={() => setIsAddingLink(true)}
                                         startIcon={<AddRoundedIcon />}
                                         variant="contained"
                                         size="small"
-                                        sx={{ flex: "0 0 auto", minWidth: "max-content", whiteSpace: "nowrap" }}
+                                        sx={{
+                                            flex: "0 0 auto",
+                                            minWidth: "max-content",
+                                            whiteSpace: "nowrap",
+                                        }}
                                     >
                                         Add link
                                     </Button>
                                 )}
                                 <IconButton
                                     aria-label="Delete collection"
-                                    onClick={() => setIsDeleting(true)}
+                                    onClick={() => setIsDeleteDialogOpen(true)}
                                     title="Delete collection"
                                     sx={{ flex: "0 0 auto" }}
                                 >
@@ -454,7 +420,15 @@ function CollectionDetail({
                             </Stack>
                         </Stack>
                         {pageError && (
-                            <Alert severity="error" sx={{ mb: 2 }}>
+                            <Alert
+                                severity="error"
+                                sx={{ mb: 2 }}
+                                action={
+                                    <Button color="inherit" size="small" onClick={retryLinkLoad}>
+                                        Retry
+                                    </Button>
+                                }
+                            >
                                 {pageError}
                             </Alert>
                         )}
@@ -481,90 +455,12 @@ function CollectionDetail({
                                 <Typography color="text.secondary">Loading saved links…</Typography>
                             </Box>
                         ) : groups.length > 0 ? (
-                            <Stack className="domain-groups" spacing={1.25}>
-                                {groups.map((group) => (
-                                    <Accordion key={group.domain} defaultExpanded disableGutters>
-                                        <AccordionSummary expandIcon={<ExpandMoreRoundedIcon />}>
-                                            <Stack
-                                                direction="row"
-                                                spacing={1.5}
-                                                sx={{ minWidth: 0, flex: 1, alignItems: "center" }}
-                                            >
-                                                <Avatar className="domain-avatar">
-                                                    {group.domain[0].toUpperCase()}
-                                                </Avatar>
-                                                <Box sx={{ minWidth: 0, flex: 1 }}>
-                                                    <Typography
-                                                        component="h3"
-                                                        className="domain-title"
-                                                        sx={{ m: 0 }}
-                                                    >
-                                                        {group.domain}
-                                                    </Typography>
-                                                    <Typography className="domain-subtitle">
-                                                        {group.links.length}{" "}
-                                                        {group.links.length === 1
-                                                            ? "saved link"
-                                                            : "saved links"}
-                                                    </Typography>
-                                                </Box>
-                                            </Stack>
-                                        </AccordionSummary>
-                                        <AccordionDetails className="domain-links">
-                                            {group.links.map((link) => (
-                                                <Stack
-                                                    className="saved-link"
-                                                    component="article"
-                                                    direction="row"
-                                                    spacing={1.75}
-                                                    key={link.id}
-                                                    sx={{ alignItems: "center" }}
-                                                >
-                                                    <ArrowOutwardRoundedIcon className="link-number" />
-                                                    <Box className="saved-copy">
-                                                        <Typography
-                                                            component="a"
-                                                            href={linkHref(link.url)}
-                                                            target="_blank"
-                                                            rel="noreferrer"
-                                                            className="saved-title"
-                                                        >
-                                                            {link.title}
-                                                            <span aria-hidden="true"> ↗</span>
-                                                        </Typography>
-                                                        <Typography
-                                                            component="p"
-                                                            className="link-url"
-                                                        >
-                                                            {link.url}
-                                                        </Typography>
-                                                        {link.note && (
-                                                            <Typography
-                                                                component="p"
-                                                                className="saved-note"
-                                                            >
-                                                                {link.note}
-                                                            </Typography>
-                                                        )}
-                                                    </Box>
-                                                    <Typography className="saved-date">
-                                                        {formatSavedAt(link.createdAt)}
-                                                    </Typography>
-                                                    {session && (
-                                                        <IconButton
-                                                            aria-label={`Remove ${link.title}`}
-                                                            onClick={() => void removeLink(link.id)}
-                                                            size="small"
-                                                        >
-                                                            <DeleteOutlineRoundedIcon fontSize="small" />
-                                                        </IconButton>
-                                                    )}
-                                                </Stack>
-                                            ))}
-                                        </AccordionDetails>
-                                    </Accordion>
-                                ))}
-                            </Stack>
+                            <DomainGroups
+                                groups={groups}
+                                onRemoveLink={
+                                    session ? (linkId) => void removeLink(linkId) : undefined
+                                }
+                            />
                         ) : (
                             <Box className="empty-state">
                                 <Typography className="empty-symbol">⌕</Typography>
@@ -599,121 +495,18 @@ function CollectionDetail({
                 </Stack>
             </Container>
 
-            <Dialog
+            <AddLinkDialog
                 open={isAddingLink}
-                onClose={() => !isSavingLink && setIsAddingLink(false)}
-                fullWidth
-                maxWidth="xs"
-            >
-                <Box component="form" onSubmit={(event) => void saveLink(event)}>
-                    <DialogTitle>Save a link</DialogTitle>
-                    <DialogContent>
-                        <Typography className="section-subtitle" sx={{ mb: 2 }}>
-                            The website domain will be detected automatically.
-                        </Typography>
-                        {linkError && (
-                            <Alert severity="error" sx={{ mb: 2 }}>
-                                {linkError}
-                            </Alert>
-                        )}
-                        <Stack spacing={2}>
-                            <TextField
-                                autoFocus
-                                fullWidth
-                                required
-                                label="URL"
-                                placeholder="github.com/username"
-                                value={newLink.url}
-                                onChange={(event) =>
-                                    setNewLink((current) => ({
-                                        ...current,
-                                        url: event.target.value,
-                                    }))
-                                }
-                            />
-                            <TextField
-                                fullWidth
-                                label="Title (optional)"
-                                value={newLink.title}
-                                onChange={(event) =>
-                                    setNewLink((current) => ({
-                                        ...current,
-                                        title: event.target.value,
-                                    }))
-                                }
-                            />
-                            <TextField
-                                fullWidth
-                                multiline
-                                minRows={2}
-                                label="Note (optional)"
-                                value={newLink.note}
-                                onChange={(event) =>
-                                    setNewLink((current) => ({
-                                        ...current,
-                                        note: event.target.value,
-                                    }))
-                                }
-                            />
-                        </Stack>
-                    </DialogContent>
-                    <DialogActions sx={{ px: 3, pb: 2.5 }}>
-                        <Button
-                            color="inherit"
-                            disabled={isSavingLink}
-                            onClick={() => setIsAddingLink(false)}
-                        >
-                            Cancel
-                        </Button>
-                        <Button type="submit" variant="contained" disabled={isSavingLink}>
-                            {isSavingLink ? "Saving…" : "Save link"}
-                        </Button>
-                    </DialogActions>
-                </Box>
-            </Dialog>
-            <Dialog
-                open={isDeleting}
-                onClose={() => !isDeleting && setIsDeleting(false)}
-                fullWidth
-                maxWidth="xs"
-            >
-                <Box component="form" onSubmit={(event) => void deleteCurrentCollection(event)}>
-                    <DialogTitle>Delete “{collection.name}”?</DialogTitle>
-                    <DialogContent>
-                        <Alert severity="warning" sx={{ mb: 2 }}>
-                            This permanently deletes the collection and every saved link inside it.
-                        </Alert>
-                        {deleteError && (
-                            <Alert severity="error" sx={{ mb: 2 }}>
-                                {deleteError}
-                            </Alert>
-                        )}
-                        <TextField
-                            autoFocus
-                            fullWidth
-                            required
-                            type="password"
-                            label="One-time deletion password"
-                            value={deletePassword}
-                            onChange={(event) => setDeletePassword(event.target.value)}
-                            slotProps={{ htmlInput: { autoComplete: "off" } }}
-                        />
-                    </DialogContent>
-                    <DialogActions sx={{ px: 3, pb: 2.5 }}>
-                        <Button color="inherit" onClick={() => setIsDeleting(false)}>
-                            Cancel
-                        </Button>
-                        <Button
-                            color="error"
-                            type="submit"
-                            variant="contained"
-                            disabled={deletePassword.length < 16}
-                        >
-                            {!isDeleting ? "Deleting…" : "Delete permanently"}
-                        </Button>
-                    </DialogActions>
-                </Box>
-            </Dialog>
+                onClose={() => setIsAddingLink(false)}
+                onSave={saveLink}
+            />
+            <DeleteCollectionDialog
+                collectionId={collectionId}
+                collectionName={collection.name}
+                open={isDeleteDialogOpen}
+                onClose={() => setIsDeleteDialogOpen(false)}
+                onDeleted={navigateHome}
+            />
         </Box>
     );
 }

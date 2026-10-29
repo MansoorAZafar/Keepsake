@@ -12,6 +12,22 @@ body {
 #root {
     min-height: 100vh;
 }
+.skip-link {
+    position: fixed;
+    z-index: 1400;
+    top: 12px;
+    left: 12px;
+    padding: 10px 14px;
+    transform: translateY(calc(-100% - 16px));
+    border-radius: 8px;
+    background: #282733;
+    color: #fff;
+    text-decoration: none;
+    transition: transform 0.15s ease;
+}
+.skip-link:focus-visible {
+    transform: translateY(0);
+}
 .library-page {
     min-height: 100vh;
     background: #fbfbfc;

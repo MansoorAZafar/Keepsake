@@ -58,6 +58,23 @@ describe("HomePage", () => {
         ).not.toBeInTheDocument();
     });
 
+    it("retries collection loading without reloading the page", async () => {
+        const listCollections = vi
+            .spyOn(api, "listCollections")
+            .mockRejectedValueOnce(new Error("The API is temporarily unavailable"))
+            .mockResolvedValueOnce([collection]);
+        const user = userEvent.setup();
+        renderHome();
+
+        expect(await screen.findByText("The API is temporarily unavailable")).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "Retry" }));
+
+        expect(
+            await screen.findByRole("heading", { name: "Design inspiration" }),
+        ).toBeInTheDocument();
+        expect(listCollections).toHaveBeenCalledTimes(2);
+    });
+
     it("creates a protected collection, saves its session, and opens its detail page", async () => {
         vi.spyOn(api, "listCollections").mockResolvedValue([]);
         vi.spyOn(api, "createCollection").mockResolvedValue({

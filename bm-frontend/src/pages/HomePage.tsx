@@ -6,27 +6,25 @@ import AutoStoriesOutlinedIcon from "@mui/icons-material/AutoStoriesOutlined";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
-import {
-    Alert,
-    Avatar,
-    Box,
-    Button,
-    Card,
-    CardActionArea,
-    Chip,
-    CircularProgress,
-    Container,
-    MenuItem,
-    Dialog,
-    DialogActions,
-    DialogContent,
-    DialogTitle,
-    IconButton,
-    InputAdornment,
-    Stack,
-    TextField,
-    Typography,
-} from "@mui/material";
+import Alert from "@mui/material/Alert";
+import Avatar from "@mui/material/Avatar";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Card from "@mui/material/Card";
+import CardActionArea from "@mui/material/CardActionArea";
+import Chip from "@mui/material/Chip";
+import CircularProgress from "@mui/material/CircularProgress";
+import Container from "@mui/material/Container";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogTitle from "@mui/material/DialogTitle";
+import IconButton from "@mui/material/IconButton";
+import InputAdornment from "@mui/material/InputAdornment";
+import MenuItem from "@mui/material/MenuItem";
+import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
 import { api, ApiError } from "../lib/api";
 import { buildCollectionBackup } from "../lib/collectionBackup";
 import { writeSession } from "../lib/sessions";
@@ -72,6 +70,7 @@ export function HomePage() {
     const [collections, setCollections] = useState<CollectionSummary[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [loadError, setLoadError] = useState("");
+    const [loadAttempt, setLoadAttempt] = useState(0);
     const [isCreating, setIsCreating] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [formError, setFormError] = useState("");
@@ -101,7 +100,7 @@ export function HomePage() {
         return () => {
             isCurrent = false;
         };
-    }, []);
+    }, [loadAttempt]);
 
     // The collection list is derived from the API result and the controlled search query.
     const visibleCollections = useMemo(() => {
@@ -143,6 +142,12 @@ export function HomePage() {
         }
     }
 
+    function retryCollectionLoad() {
+        setLoadError("");
+        setIsLoading(true);
+        setLoadAttempt((attempt) => attempt + 1);
+    }
+
     function downloadCreationBackup() {
         if (!createdSecret) return;
         const backup = buildCollectionBackup(
@@ -166,7 +171,12 @@ export function HomePage() {
 
     return (
         <Box component="main" className="library-page">
+            <Box component="a" className="skip-link" href="#main-content">
+                Skip to content
+            </Box>
             <Container
+                id="main-content"
+                tabIndex={-1}
                 maxWidth={false}
                 disableGutters
                 sx={{
@@ -285,11 +295,7 @@ export function HomePage() {
                         <Alert
                             severity="error"
                             action={
-                                <Button
-                                    color="inherit"
-                                    size="small"
-                                    onClick={() => window.location.reload()}
-                                >
+                                <Button color="inherit" size="small" onClick={retryCollectionLoad}>
                                     Retry
                                 </Button>
                             }
@@ -429,6 +435,7 @@ export function HomePage() {
                                 fullWidth
                                 required
                                 label="Collection name"
+                                name="name"
                                 value={newCollection.name}
                                 onChange={(event) =>
                                     setNewCollection((current) => ({
@@ -441,6 +448,7 @@ export function HomePage() {
                             <TextField
                                 fullWidth
                                 label="Description"
+                                name="description"
                                 value={newCollection.description}
                                 onChange={(event) =>
                                     setNewCollection((current) => ({
@@ -454,6 +462,7 @@ export function HomePage() {
                                 select
                                 fullWidth
                                 label="Visibility"
+                                name="visibility"
                                 value={newCollection.visibility}
                                 onChange={(event) =>
                                     setNewCollection((current) => ({
@@ -478,6 +487,7 @@ export function HomePage() {
                                     required
                                     type="password"
                                     label="Collection password"
+                                    name="password"
                                     value={newCollection.password ?? ""}
                                     onChange={(event) =>
                                         setNewCollection((current) => ({
