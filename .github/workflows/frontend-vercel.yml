@@ -1,0 +1,95 @@
+name: Frontend CI and Vercel Preview
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+    paths:
+      - "bm-frontend/**"
+      - ".github/workflows/frontend-vercel.yml"
+  push:
+    branches: ["**"]
+    paths:
+      - "bm-frontend/**"
+      - ".github/workflows/frontend-vercel.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-vercel-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Frontend checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bm-frontend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: bm-frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build frontend
+        run: npm run build
+
+  deploy-preview:
+    name: Vercel preview
+    needs: checks
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    environment: Preview
+    defaults:
+      run:
+        working-directory: bm-frontend
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: bm-frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@50
+
+      - name: Pull Vercel Preview settings
+        run: vercel pull --yes --environment=preview --git-branch="$GITHUB_HEAD_REF" --token="$VERCEL_TOKEN"
+
+      - name: Build Vercel preview
+        run: vercel build --token="$VERCEL_TOKEN"
+
+      - name: Deploy Vercel preview
+        run: vercel deploy --prebuilt --token="$VERCEL_TOKEN"
