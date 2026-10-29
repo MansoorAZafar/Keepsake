@@ -44,4 +44,4 @@ npm test
 npm run build
 ```
 
-`format:check` checks the checked-in frontend skills as well as application files. To check only application source, run `npx oxfmt --check src`.
+`format` and `format:check` cover application source, Vite configuration, and first-party project files. They intentionally exclude `.agents/skills` and `skills-lock.json`, which are managed skill artifacts rather than application source.
