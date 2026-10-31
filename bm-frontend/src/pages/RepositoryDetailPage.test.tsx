@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+    cleanup,
+    render,
+    screen,
+    waitFor,
+    waitForElementToBeRemoved,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ThemeProvider } from "@mui/material/styles";
@@ -119,10 +125,60 @@ describe("RepositoryDetailPage", () => {
         expect(await screen.findByRole("heading", { name: "figma.com" })).toBeInTheDocument();
         expect(screen.getByText("Figma file")).toBeInTheDocument();
         await user.click(screen.getByRole("button", { name: "Remove Figma file" }));
+        expect(screen.getByRole("dialog", { name: "Remove this saved link?" })).toBeInTheDocument();
+        expect(api.deleteLink).not.toHaveBeenCalled();
+        await user.click(screen.getByRole("button", { name: "Cancel" }));
+        await waitForElementToBeRemoved(() =>
+            screen.queryByRole("dialog", { name: "Remove this saved link?" }),
+        );
+        expect(api.deleteLink).not.toHaveBeenCalled();
+
+        await user.click(screen.getByRole("button", { name: "Remove Figma file" }));
+        await user.click(screen.getByRole("button", { name: "Delete link" }));
         await waitFor(() =>
             expect(api.deleteLink).toHaveBeenCalledWith("design", "new", "valid-token"),
         );
         expect(screen.queryByRole("heading", { name: "figma.com" })).not.toBeInTheDocument();
+    });
+
+    it("edits a collection name and description through the session-protected API", async () => {
+        writeSession("design", {
+            accessToken: "valid-token",
+            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        });
+        vi.spyOn(api, "getCollection").mockResolvedValue(collection);
+        vi.spyOn(api, "listLinks").mockResolvedValue([]);
+        vi.spyOn(api, "updateCollection").mockResolvedValue({
+            ...collection,
+            name: "Reading list",
+            description: "Things to read later",
+        });
+        const user = userEvent.setup();
+        renderDetail();
+
+        await user.click(await screen.findByRole("button", { name: "Edit collection" }));
+        expect(screen.getByRole("textbox", { name: "Collection name" })).toHaveValue(
+            "Design inspiration",
+        );
+        expect(screen.getByRole("textbox", { name: "Description" })).toHaveValue(
+            "Interfaces and visual ideas",
+        );
+        await user.clear(screen.getByRole("textbox", { name: "Collection name" }));
+        await user.type(screen.getByRole("textbox", { name: "Collection name" }), "Reading list");
+        await user.clear(screen.getByRole("textbox", { name: "Description" }));
+        await user.type(
+            screen.getByRole("textbox", { name: "Description" }),
+            "Things to read later",
+        );
+        await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+        expect(await screen.findByRole("heading", { name: "Reading list" })).toBeInTheDocument();
+        expect(screen.getByText("Things to read later")).toBeInTheDocument();
+        expect(api.updateCollection).toHaveBeenCalledWith("design", "valid-token", {
+            name: "Reading list",
+            description: "Things to read later",
+        });
+        expect(screen.queryByRole("dialog", { name: "Edit collection" })).not.toBeInTheDocument();
     });
 
     it("shows public links without asking for a password and does not expose edit controls", async () => {

@@ -32,6 +32,7 @@
         "@types/node": "^26.6.6",
         "@types/pg": "^8.23.1",
         "@types/supertest": "^7.2.1",
+        "@vitest/coverage-v8": "^5.0.5",
         "oxfmt": "^0.75.0",
         "oxlint": "^1.90.0",
         "supertest": "^7.3.1",

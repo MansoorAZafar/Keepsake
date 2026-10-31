@@ -16,6 +16,7 @@ import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import AutoStoriesOutlinedIcon from "@mui/icons-material/AutoStoriesOutlined";
 import DeleteForeverOutlinedIcon from "@mui/icons-material/DeleteForeverOutlined";
 import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
@@ -25,11 +26,14 @@ import { readSession, removeSession, writeSession } from "../lib/sessions";
 import { DomainGroups } from "../components/DomainGroups";
 import { DeleteCollectionDialog } from "../components/DeleteCollectionDialog";
 import { AddLinkDialog } from "../components/AddLinkDialog";
+import { ConfirmDeleteLinkDialog } from "../components/ConfirmDeleteLinkDialog";
+import { EditCollectionDialog } from "../components/EditCollectionDialog";
 import type {
     CollectionSession,
     CollectionSummary,
     CreateLinkInput,
     SavedLink,
+    UpdateCollectionInput,
 } from "../types/api";
 
 export function RepositoryDetailPage() {
@@ -75,6 +79,8 @@ function CollectionDetail({
     const [isUnlocking, setIsUnlocking] = useState(false);
     const [isAddingLink, setIsAddingLink] = useState(false);
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+    const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+    const [linkPendingDelete, setLinkPendingDelete] = useState<SavedLink | null>(null);
 
     // @todo, add a duplicate button
 
@@ -159,14 +165,20 @@ function CollectionDetail({
         setLinks((current) => [saved, ...current]);
     }
 
-    async function removeLink(linkId: string) {
-        if (!session) return;
-        try {
-            await api.deleteLink(collectionId, linkId, session.accessToken);
-            setLinks((current) => current.filter((link) => link.id !== linkId));
-        } catch (error) {
-            setPageError(error instanceof Error ? error.message : "Could not remove the link.");
-        }
+    async function updateCollection(input: UpdateCollectionInput) {
+        if (!session) throw new Error("Unlock the collection before editing it.");
+        const updated = await api.updateCollection(collectionId, session.accessToken, input);
+        setCollection(updated);
+    }
+
+    function requestLinkRemoval(linkId: string) {
+        setLinkPendingDelete(links.find((link) => link.id === linkId) ?? null);
+    }
+
+    async function removeLink() {
+        if (!session || !linkPendingDelete) return;
+        await api.deleteLink(collectionId, linkPendingDelete.id, session.accessToken);
+        setLinks((current) => current.filter((link) => link.id !== linkPendingDelete.id));
     }
 
     async function lockCollection() {
@@ -298,6 +310,19 @@ function CollectionDetail({
                         size="small"
                         sx={{ mt: 1 }}
                     />
+                    {session && (
+                        <Box sx={{ mt: 2 }}>
+                            <Button
+                                onClick={() => setIsEditDialogOpen(true)}
+                                startIcon={<EditOutlinedIcon />}
+                                variant="outlined"
+                                size="small"
+                                aria-label="Edit collection"
+                            >
+                                Edit details
+                            </Button>
+                        </Box>
+                    )}
                 </Box>
 
                 {collection.visibility === "private" && !session ? (
@@ -457,9 +482,7 @@ function CollectionDetail({
                         ) : groups.length > 0 ? (
                             <DomainGroups
                                 groups={groups}
-                                onRemoveLink={
-                                    session ? (linkId) => void removeLink(linkId) : undefined
-                                }
+                                onRemoveLink={session ? requestLinkRemoval : undefined}
                             />
                         ) : (
                             <Box className="empty-state">
@@ -499,6 +522,19 @@ function CollectionDetail({
                 open={isAddingLink}
                 onClose={() => setIsAddingLink(false)}
                 onSave={saveLink}
+            />
+            {isEditDialogOpen && session && (
+                <EditCollectionDialog
+                    name={collection.name}
+                    description={collection.description}
+                    onClose={() => setIsEditDialogOpen(false)}
+                    onSave={updateCollection}
+                />
+            )}
+            <ConfirmDeleteLinkDialog
+                link={linkPendingDelete}
+                onClose={() => setLinkPendingDelete(null)}
+                onConfirm={removeLink}
             />
             <DeleteCollectionDialog
                 collectionId={collectionId}

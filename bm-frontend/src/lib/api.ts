@@ -5,6 +5,7 @@ import type {
     CreateCollectionInput,
     CreateLinkInput,
     SavedLink,
+    UpdateCollectionInput,
 } from "../types/api";
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL ?? "http://localhost:3001/api").replace(
@@ -79,6 +80,12 @@ export const api = {
         request<CollectionSummary>(`/collections/${encodeURIComponent(collectionId)}`),
     createCollection: (input: CreateCollectionInput) =>
         request<CreatedCollection>("/collections", { method: "POST", body: JSON.stringify(input) }),
+    updateCollection: (collectionId: string, token: string, input: UpdateCollectionInput) =>
+        request<CollectionSummary>(
+            `/collections/${encodeURIComponent(collectionId)}`,
+            { method: "PATCH", body: JSON.stringify(input) },
+            token,
+        ),
     createSession: (collectionId: string, password: string) =>
         request<CollectionSession>(`/collections/${encodeURIComponent(collectionId)}/sessions`, {
             method: "POST",

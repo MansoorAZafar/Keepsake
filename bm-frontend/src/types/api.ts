@@ -36,6 +36,11 @@ export interface CreateCollectionInput {
     password?: string;
 }
 
+export interface UpdateCollectionInput {
+    name: string;
+    description: string;
+}
+
 export interface CreatedCollection extends CollectionAccess {
     deletePassword: string;
 }
