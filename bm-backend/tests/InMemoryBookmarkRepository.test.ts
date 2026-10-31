@@ -37,6 +37,12 @@ describe("InMemoryBookmarkRepository", () => {
             title: "Example",
             note: "",
         });
+        const note = await repository.createNote({
+            collectionId: collection.id,
+            title: "Project note",
+            content: { ops: [{ insert: "Keep this nearby.\\n" }] },
+        });
+        await repository.createComment({ noteId: note.id, body: "A reply" });
         await repository.createSession({
             collectionId: collection.id,
             tokenHash: "hashed-token",
@@ -46,5 +52,7 @@ describe("InMemoryBookmarkRepository", () => {
         expect(await repository.deleteCollection(collection.id)).toBe(true);
         expect(await repository.listLinks(collection.id)).toEqual([]);
         expect(await repository.findSessionByTokenHash("hashed-token")).toBeUndefined();
+        expect(await repository.listNotes(collection.id)).toEqual([]);
+        expect(await repository.listComments(note.id)).toEqual([]);
     });
 });

@@ -1,10 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+    cleanup,
+    render,
+    screen,
+    waitFor,
+    waitForElementToBeRemoved,
+    within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ThemeProvider } from "@mui/material/styles";
 import { api } from "../lib/api";
 import { writeSession } from "../lib/sessions";
+import type { CollectionNote, NoteComment } from "../types/api";
 import { theme } from "../app/theme";
 import { RepositoryDetailPage } from "./RepositoryDetailPage";
 
@@ -73,6 +81,7 @@ describe("RepositoryDetailPage", () => {
             expiresAt: new Date(Date.now() + 60_000).toISOString(),
         });
         vi.spyOn(api, "listLinks").mockResolvedValue(links);
+        vi.spyOn(api, "listNotes").mockResolvedValue([]);
         const user = userEvent.setup();
         renderDetail();
 
@@ -96,6 +105,7 @@ describe("RepositoryDetailPage", () => {
         });
         vi.spyOn(api, "getCollection").mockResolvedValue(collection);
         vi.spyOn(api, "listLinks").mockResolvedValue(links);
+        vi.spyOn(api, "listNotes").mockResolvedValue([]);
         const newLink = {
             id: "new",
             collectionId: "design",
@@ -119,15 +129,179 @@ describe("RepositoryDetailPage", () => {
         expect(await screen.findByRole("heading", { name: "figma.com" })).toBeInTheDocument();
         expect(screen.getByText("Figma file")).toBeInTheDocument();
         await user.click(screen.getByRole("button", { name: "Remove Figma file" }));
+        expect(screen.getByRole("dialog", { name: "Remove this saved link?" })).toBeInTheDocument();
+        expect(api.deleteLink).not.toHaveBeenCalled();
+        await user.click(screen.getByRole("button", { name: "Cancel" }));
+        await waitForElementToBeRemoved(() =>
+            screen.queryByRole("dialog", { name: "Remove this saved link?" }),
+        );
+        expect(api.deleteLink).not.toHaveBeenCalled();
+
+        await user.click(screen.getByRole("button", { name: "Remove Figma file" }));
+        await user.click(screen.getByRole("button", { name: "Delete link" }));
         await waitFor(() =>
             expect(api.deleteLink).toHaveBeenCalledWith("design", "new", "valid-token"),
         );
         expect(screen.queryByRole("heading", { name: "figma.com" })).not.toBeInTheDocument();
     });
 
+    it("edits a collection name and description through the session-protected API", async () => {
+        writeSession("design", {
+            accessToken: "valid-token",
+            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        });
+        vi.spyOn(api, "getCollection").mockResolvedValue(collection);
+        vi.spyOn(api, "listLinks").mockResolvedValue([]);
+        vi.spyOn(api, "listNotes").mockResolvedValue([]);
+        vi.spyOn(api, "updateCollection").mockResolvedValue({
+            ...collection,
+            name: "Reading list",
+            description: "Things to read later",
+        });
+        const user = userEvent.setup();
+        renderDetail();
+
+        await user.click(await screen.findByRole("button", { name: "Edit collection" }));
+        expect(screen.getByRole("textbox", { name: "Collection name" })).toHaveValue(
+            "Design inspiration",
+        );
+        expect(screen.getByRole("textbox", { name: "Description" })).toHaveValue(
+            "Interfaces and visual ideas",
+        );
+        await user.clear(screen.getByRole("textbox", { name: "Collection name" }));
+        await user.type(screen.getByRole("textbox", { name: "Collection name" }), "Reading list");
+        await user.clear(screen.getByRole("textbox", { name: "Description" }));
+        await user.type(
+            screen.getByRole("textbox", { name: "Description" }),
+            "Things to read later",
+        );
+        await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+        expect(await screen.findByRole("heading", { name: "Reading list" })).toBeInTheDocument();
+        expect(screen.getByText("Things to read later")).toBeInTheDocument();
+        expect(api.updateCollection).toHaveBeenCalledWith("design", "valid-token", {
+            name: "Reading list",
+            description: "Things to read later",
+        });
+        expect(screen.queryByRole("dialog", { name: "Edit collection" })).not.toBeInTheDocument();
+    });
+
+    it("searches note titles and rich text, and only loads comments after Reply is pressed", async () => {
+        writeSession("design", {
+            accessToken: "valid-token",
+            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        });
+        const note: CollectionNote = {
+            id: "note-1",
+            collectionId: "design",
+            title: "Research checklist",
+            content: { ops: [{ insert: "Review accessible tokens and contrast.\n" }] },
+            createdAt: "2026-01-05T00:00:00.000Z",
+            updatedAt: "2026-01-05T00:00:00.000Z",
+        };
+        vi.spyOn(api, "getCollection").mockResolvedValue(collection);
+        vi.spyOn(api, "listLinks").mockResolvedValue(links);
+        vi.spyOn(api, "listNotes").mockResolvedValue([note]);
+        vi.spyOn(api, "listNoteComments").mockResolvedValue([]);
+        vi.spyOn(api, "createNoteComment").mockResolvedValue({
+            id: "comment-1",
+            noteId: note.id,
+            body: "I checked these today.",
+            createdAt: "2026-01-06T00:00:00.000Z",
+        } satisfies NoteComment);
+        vi.spyOn(api, "updateNoteComment").mockResolvedValue({
+            id: "comment-1",
+            noteId: note.id,
+            body: "I updated this reply.",
+            createdAt: "2026-01-06T00:00:00.000Z",
+        });
+        vi.spyOn(api, "deleteNoteComment").mockResolvedValue(undefined);
+        vi.spyOn(api, "updateNote").mockResolvedValue({
+            ...note,
+            title: "Updated research checklist",
+        });
+        vi.spyOn(api, "deleteNote").mockResolvedValue(undefined);
+        const user = userEvent.setup();
+        renderDetail();
+
+        expect(
+            await screen.findByRole("heading", { name: "Research checklist" }),
+        ).toBeInTheDocument();
+        expect(screen.queryByText("No replies yet.")).not.toBeInTheDocument();
+        expect(api.listNoteComments).not.toHaveBeenCalled();
+
+        await user.type(
+            screen.getByRole("textbox", { name: "Search links or domains" }),
+            "accessible tokens",
+        );
+        expect(screen.getByRole("heading", { name: "Research checklist" })).toBeInTheDocument();
+        expect(screen.queryByRole("heading", { name: "github.com" })).not.toBeInTheDocument();
+
+        await user.click(screen.getByRole("button", { name: "Reply" }));
+        expect(await screen.findByText("No replies yet.")).toBeInTheDocument();
+        expect(api.listNoteComments).toHaveBeenCalledWith("design", note.id, "valid-token");
+        await user.type(
+            screen.getByRole("textbox", { name: "Write a reply" }),
+            "I checked these today.",
+        );
+        await user.click(screen.getByRole("button", { name: "Post" }));
+        expect(await screen.findByText("I checked these today.")).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "Hide comments" }));
+        expect(screen.queryByText("I checked these today.")).not.toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "Show comments" }));
+        expect(screen.getByText("I checked these today.")).toBeInTheDocument();
+
+        await user.click(screen.getByRole("button", { name: "Edit reply" }));
+        await user.clear(screen.getByRole("textbox", { name: "Edit reply" }));
+        await user.type(
+            screen.getByRole("textbox", { name: "Edit reply" }),
+            "I updated this reply.",
+        );
+        await user.click(screen.getByRole("button", { name: "Save" }));
+        expect(await screen.findByText("I updated this reply.")).toBeInTheDocument();
+        await user.click(await screen.findByRole("button", { name: "Delete reply" }));
+        const deleteReplyDialog = await screen.findByRole("dialog", {
+            name: "Delete this reply?",
+        });
+        await user.click(within(deleteReplyDialog).getByRole("button", { name: "Delete reply" }));
+        await waitForElementToBeRemoved(() =>
+            screen.queryByRole("dialog", { name: "Delete this reply?" }),
+        );
+        await waitFor(() =>
+            expect(api.deleteNoteComment).toHaveBeenCalledWith(
+                "design",
+                note.id,
+                "comment-1",
+                "valid-token",
+            ),
+        );
+
+        await user.click(screen.getByRole("button", { name: "Edit note Research checklist" }));
+        await user.clear(screen.getByRole("textbox", { name: "Note title" }));
+        await user.type(
+            screen.getByRole("textbox", { name: "Note title" }),
+            "Updated research checklist",
+        );
+        await user.click(screen.getByRole("button", { name: "Save changes" }));
+        expect(
+            await screen.findByRole("heading", { name: "Updated research checklist" }),
+        ).toBeInTheDocument();
+        await user.click(
+            screen.getByRole("button", { name: "Delete note Updated research checklist" }),
+        );
+        await user.click(await screen.findByRole("button", { name: "Delete note" }));
+        await waitFor(() =>
+            expect(api.deleteNote).toHaveBeenCalledWith("design", note.id, "valid-token"),
+        );
+        expect(
+            screen.queryByRole("heading", { name: "Updated research checklist" }),
+        ).not.toBeInTheDocument();
+    });
+
     it("shows public links without asking for a password and does not expose edit controls", async () => {
         vi.spyOn(api, "getCollection").mockResolvedValue({ ...collection, visibility: "public" });
         vi.spyOn(api, "listLinks").mockResolvedValue(links);
+        vi.spyOn(api, "listNotes").mockResolvedValue([]);
         renderDetail();
 
         expect(await screen.findByRole("heading", { name: "github.com" })).toBeInTheDocument();

@@ -1,0 +1,14 @@
+{
+    "CORSRules": [
+        {
+            "AllowedOrigins": [
+                "http://localhost:5173",
+                "https://replace-with-your-frontend-domain.vercel.app"
+            ],
+            "AllowedMethods": ["PUT", "GET", "HEAD"],
+            "AllowedHeaders": ["*"],
+            "ExposeHeaders": ["ETag"],
+            "MaxAgeSeconds": 3000
+        }
+    ]
+}

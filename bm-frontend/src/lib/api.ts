@@ -1,10 +1,16 @@
 import type {
     CreatedCollection,
+    CollectionNote,
     CollectionSession,
     CollectionSummary,
     CreateCollectionInput,
     CreateLinkInput,
+    CreateNoteInput,
+    NoteComment,
+    NoteImageUploadGrant,
     SavedLink,
+    UpdateCollectionInput,
+    UpdateNoteInput,
 } from "../types/api";
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL ?? "http://localhost:3001/api").replace(
@@ -24,7 +30,7 @@ export class ApiError extends Error {
 
 async function request<T>(path: string, init: RequestInit = {}, accessToken?: string): Promise<T> {
     const headers = new Headers(init.headers);
-    if (init.body) headers.set("Content-Type", "application/json");
+    if (typeof init.body === "string") headers.set("Content-Type", "application/json");
     if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
 
     const controller = new AbortController();
@@ -79,6 +85,12 @@ export const api = {
         request<CollectionSummary>(`/collections/${encodeURIComponent(collectionId)}`),
     createCollection: (input: CreateCollectionInput) =>
         request<CreatedCollection>("/collections", { method: "POST", body: JSON.stringify(input) }),
+    updateCollection: (collectionId: string, token: string, input: UpdateCollectionInput) =>
+        request<CollectionSummary>(
+            `/collections/${encodeURIComponent(collectionId)}`,
+            { method: "PATCH", body: JSON.stringify(input) },
+            token,
+        ),
     createSession: (collectionId: string, password: string) =>
         request<CollectionSession>(`/collections/${encodeURIComponent(collectionId)}/sessions`, {
             method: "POST",
@@ -102,6 +114,77 @@ export const api = {
         request<void>(
             `/collections/${encodeURIComponent(collectionId)}/links/${encodeURIComponent(linkId)}`,
             { method: "DELETE" },
+            token,
+        ),
+    listNotes: (collectionId: string, token?: string) =>
+        request<CollectionNote[]>(
+            `/collections/${encodeURIComponent(collectionId)}/notes`,
+            {},
+            token,
+        ),
+    createNote: (collectionId: string, token: string, input: CreateNoteInput) =>
+        request<CollectionNote>(
+            `/collections/${encodeURIComponent(collectionId)}/notes`,
+            { method: "POST", body: JSON.stringify(input) },
+            token,
+        ),
+    updateNote: (collectionId: string, noteId: string, token: string, input: UpdateNoteInput) =>
+        request<CollectionNote>(
+            `/collections/${encodeURIComponent(collectionId)}/notes/${encodeURIComponent(noteId)}`,
+            { method: "PATCH", body: JSON.stringify(input) },
+            token,
+        ),
+    deleteNote: (collectionId: string, noteId: string, token: string) =>
+        request<void>(
+            `/collections/${encodeURIComponent(collectionId)}/notes/${encodeURIComponent(noteId)}`,
+            { method: "DELETE" },
+            token,
+        ),
+    listNoteComments: (collectionId: string, noteId: string, token?: string) =>
+        request<NoteComment[]>(
+            `/collections/${encodeURIComponent(collectionId)}/notes/${encodeURIComponent(noteId)}/comments`,
+            {},
+            token,
+        ),
+    createNoteComment: (collectionId: string, noteId: string, token: string, body: string) =>
+        request<NoteComment>(
+            `/collections/${encodeURIComponent(collectionId)}/notes/${encodeURIComponent(noteId)}/comments`,
+            { method: "POST", body: JSON.stringify({ body }) },
+            token,
+        ),
+    updateNoteComment: (
+        collectionId: string,
+        noteId: string,
+        commentId: string,
+        token: string,
+        body: string,
+    ) =>
+        request<NoteComment>(
+            `/collections/${encodeURIComponent(collectionId)}/notes/${encodeURIComponent(noteId)}/comments/${encodeURIComponent(commentId)}`,
+            { method: "PATCH", body: JSON.stringify({ body }) },
+            token,
+        ),
+    deleteNoteComment: (collectionId: string, noteId: string, commentId: string, token: string) =>
+        request<void>(
+            `/collections/${encodeURIComponent(collectionId)}/notes/${encodeURIComponent(noteId)}/comments/${encodeURIComponent(commentId)}`,
+            { method: "DELETE" },
+            token,
+        ),
+    createNoteImageUpload: (
+        collectionId: string,
+        token: string,
+        input: { contentType: string; size: number },
+        signal?: AbortSignal,
+    ) =>
+        request<NoteImageUploadGrant>(
+            `/collections/${encodeURIComponent(collectionId)}/media/upload-url`,
+            { method: "POST", body: JSON.stringify(input), signal },
+            token,
+        ),
+    deleteUnusedNoteImage: (collectionId: string, token: string, imageKey: string) =>
+        request<void>(
+            `/collections/${encodeURIComponent(collectionId)}/media`,
+            { method: "DELETE", body: JSON.stringify({ imageKey }) },
             token,
         ),
     deleteCollection: (collectionId: string, deletePassword: string) =>

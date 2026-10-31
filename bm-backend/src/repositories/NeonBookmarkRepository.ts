@@ -3,9 +3,12 @@ import { Pool, type QueryResultRow } from "pg";
 import { normalizeNeonConnectionString } from "../db/connection.js";
 import type { BookmarkRepository } from "./BookmarkRepository.js";
 import type {
+    CollectionNote,
     CollectionSession,
+    NoteComment,
     SavedLink,
     StoredCollection,
+    UpdateNoteInput,
     UpdateCollectionInput,
 } from "../types/domain.js";
 
@@ -38,6 +41,22 @@ interface SessionRow extends QueryResultRow {
     expires_at: Date;
 }
 
+interface NoteRow extends QueryResultRow {
+    id: string;
+    collection_id: string;
+    title: string;
+    content: CollectionNote["content"];
+    created_at: Date;
+    updated_at: Date;
+}
+
+interface NoteCommentRow extends QueryResultRow {
+    id: string;
+    note_id: string;
+    body: string;
+    created_at: Date;
+}
+
 const toCollection = (row: CollectionRow): StoredCollection => ({
     id: row.id,
     name: row.name,
@@ -65,6 +84,22 @@ const toSession = (row: SessionRow): CollectionSession => ({
     tokenHash: row.token_hash,
     createdAt: row.created_at.toISOString(),
     expiresAt: row.expires_at.toISOString(),
+});
+
+const toNote = (row: NoteRow): CollectionNote => ({
+    id: row.id,
+    collectionId: row.collection_id,
+    title: row.title,
+    content: row.content,
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
+});
+
+const toComment = (row: NoteCommentRow): NoteComment => ({
+    id: row.id,
+    noteId: row.note_id,
+    body: row.body,
+    createdAt: row.created_at.toISOString(),
 });
 
 /** PostgreSQL storage adapter. The service and HTTP DTOs remain database-agnostic. */
@@ -176,6 +211,107 @@ export class NeonBookmarkRepository implements BookmarkRepository {
         const result = await this.pool.query(
             "DELETE FROM links WHERE collection_id = $1 AND id = $2",
             [collectionId, linkId],
+        );
+        return result.rowCount === 1;
+    }
+
+    async listNotes(collectionId: string): Promise<CollectionNote[]> {
+        const { rows } = await this.pool.query<NoteRow>(
+            "SELECT * FROM notes WHERE collection_id = $1 ORDER BY created_at DESC",
+            [collectionId],
+        );
+        return rows.map(toNote);
+    }
+
+    async createNote(
+        input: Omit<CollectionNote, "id" | "createdAt" | "updatedAt">,
+    ): Promise<CollectionNote> {
+        const { rows } = await this.pool.query<NoteRow>(
+            `INSERT INTO notes (id, collection_id, title, content)
+             VALUES ($1, $2, $3, $4)
+             RETURNING *`,
+            [randomUUID(), input.collectionId, input.title, JSON.stringify(input.content)],
+        );
+        return toNote(rows[0]);
+    }
+
+    async findNote(collectionId: string, noteId: string): Promise<CollectionNote | undefined> {
+        const { rows } = await this.pool.query<NoteRow>(
+            "SELECT * FROM notes WHERE collection_id = $1 AND id = $2",
+            [collectionId, noteId],
+        );
+        return rows[0] ? toNote(rows[0]) : undefined;
+    }
+
+    async updateNote(
+        collectionId: string,
+        noteId: string,
+        changes: UpdateNoteInput,
+    ): Promise<CollectionNote | undefined> {
+        const assignments: string[] = [];
+        const values: unknown[] = [];
+        if (changes.title !== undefined) {
+            values.push(changes.title);
+            assignments.push(`title = $${values.length}`);
+        }
+        if (changes.content !== undefined) {
+            values.push(JSON.stringify(changes.content));
+            assignments.push(`content = $${values.length}`);
+        }
+        if (assignments.length === 0) return this.findNote(collectionId, noteId);
+        values.push(collectionId, noteId);
+        const { rows } = await this.pool.query<NoteRow>(
+            `UPDATE notes
+             SET ${assignments.join(", ")}, updated_at = NOW()
+             WHERE collection_id = $${values.length - 1} AND id = $${values.length}
+             RETURNING *`,
+            values,
+        );
+        return rows[0] ? toNote(rows[0]) : undefined;
+    }
+
+    async deleteNote(collectionId: string, noteId: string): Promise<boolean> {
+        const result = await this.pool.query(
+            "DELETE FROM notes WHERE collection_id = $1 AND id = $2",
+            [collectionId, noteId],
+        );
+        return result.rowCount === 1;
+    }
+
+    async listComments(noteId: string): Promise<NoteComment[]> {
+        const { rows } = await this.pool.query<NoteCommentRow>(
+            "SELECT * FROM note_comments WHERE note_id = $1 ORDER BY created_at ASC",
+            [noteId],
+        );
+        return rows.map(toComment);
+    }
+
+    async createComment(input: Omit<NoteComment, "id" | "createdAt">): Promise<NoteComment> {
+        const { rows } = await this.pool.query<NoteCommentRow>(
+            `INSERT INTO note_comments (id, note_id, body)
+             VALUES ($1, $2, $3)
+             RETURNING *`,
+            [randomUUID(), input.noteId, input.body],
+        );
+        return toComment(rows[0]);
+    }
+
+    async updateComment(
+        noteId: string,
+        commentId: string,
+        body: string,
+    ): Promise<NoteComment | undefined> {
+        const { rows } = await this.pool.query<NoteCommentRow>(
+            `UPDATE note_comments SET body = $3 WHERE note_id = $1 AND id = $2 RETURNING *`,
+            [noteId, commentId, body],
+        );
+        return rows[0] ? toComment(rows[0]) : undefined;
+    }
+
+    async deleteComment(noteId: string, commentId: string): Promise<boolean> {
+        const result = await this.pool.query(
+            "DELETE FROM note_comments WHERE note_id = $1 AND id = $2",
+            [noteId, commentId],
         );
         return result.rowCount === 1;
     }

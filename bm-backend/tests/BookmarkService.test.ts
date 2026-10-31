@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { InMemoryBookmarkRepository } from "../src/repositories/InMemoryBookmarkRepository.js";
 import { BookmarkService } from "../src/services/BookmarkService.js";
 import { hashSessionToken } from "../src/security/passwords.js";
@@ -123,5 +123,154 @@ describe("BookmarkService", () => {
         await expect(
             service.listLinks(created.collection.id, created.accessToken),
         ).rejects.toMatchObject({ statusCode: 401 });
+    });
+
+    it("protects private notes and creates session-protected comments", async () => {
+        const created = await service.createCollection({
+            name: "Notes",
+            visibility: "private",
+            password: "safe password 123",
+        });
+        await expect(service.listNotes(created.collection.id)).rejects.toMatchObject({
+            statusCode: 401,
+        });
+
+        const note = await service.createNote(
+            created.collection.id,
+            { title: "Research", content: { ops: [{ insert: "Keep these details.\\n" }] } },
+            created.accessToken,
+        );
+        expect(
+            (await service.listNotes(created.collection.id, created.accessToken))[0],
+        ).toMatchObject({
+            id: note.id,
+            title: "Research",
+        });
+        await expect(
+            service.createNoteComment(created.collection.id, note.id, "No token", "invalid"),
+        ).rejects.toMatchObject({ statusCode: 401 });
+        const comment = await service.createNoteComment(
+            created.collection.id,
+            note.id,
+            "A useful reply",
+            created.accessToken,
+        );
+        expect(
+            await service.listNoteComments(created.collection.id, note.id, created.accessToken),
+        ).toEqual([comment]);
+    });
+
+    it("stores stable Filebase object keys and returns signed image links", async () => {
+        const key = "collections/test/images/image.png";
+        const imageStorage = {
+            createUploadUrl: async () => ({
+                uploadUrl: "https://filebase.test/upload",
+                imageUrl: `https://signed.filebase.test/${key}`,
+                imageKey: key,
+            }),
+            createReadUrl: async (objectKey: string) => `https://signed.filebase.test/${objectKey}`,
+            deleteImages: async () => {},
+            isObjectUrl: (value: string) => {
+                if (value.startsWith("filebase://")) return value.slice("filebase://".length);
+                const prefix = "https://signed.filebase.test/";
+                return value.startsWith(prefix) ? value.slice(prefix.length) : undefined;
+            },
+        };
+        const serviceWithImageStorage = new BookmarkService(repository, undefined, imageStorage);
+        const created = await serviceWithImageStorage.createCollection({
+            name: "Images",
+            visibility: "public",
+        });
+        const imageKey = `collections/${created.collection.id}/images/image.png`;
+        imageStorage.createUploadUrl = async () => ({
+            uploadUrl: "https://filebase.test/upload",
+            imageUrl: `https://signed.filebase.test/${imageKey}`,
+            imageKey,
+        });
+        const uploaded = await serviceWithImageStorage.createNoteImageUpload(
+            created.collection.id,
+            "image/png",
+            3,
+            created.accessToken,
+        );
+        expect(uploaded.uploadUrl).toBe("https://filebase.test/upload");
+        const note = await serviceWithImageStorage.createNote(
+            created.collection.id,
+            {
+                title: "With image",
+                content: { ops: [{ insert: { image: uploaded.imageUrl } }, { insert: "\\n" }] },
+            },
+            created.accessToken,
+        );
+        expect(note.content.ops[0]).toEqual({
+            insert: { image: `https://signed.filebase.test/${imageKey}` },
+        });
+        const saved = await repository.findNote(created.collection.id, note.id);
+        expect(saved?.content.ops[0]).toEqual({ insert: { image: `filebase://${imageKey}` } });
+    });
+
+    it("deletes note images from object storage when removed or when the note is deleted", async () => {
+        const key = "collections/images/images/first.png";
+        const deleteImages = vi.fn(async (_keys: string[]) => {});
+        const imageStorage = {
+            createUploadUrl: async () => ({
+                uploadUrl: "https://filebase.test/upload",
+                imageUrl: `https://signed.filebase.test/${key}`,
+                imageKey: key,
+            }),
+            createReadUrl: async (objectKey: string) => `https://signed.filebase.test/${objectKey}`,
+            isObjectUrl: (value: string) => {
+                if (value.startsWith("filebase://")) return value.slice("filebase://".length);
+                const prefix = "https://signed.filebase.test/";
+                return value.startsWith(prefix) ? value.slice(prefix.length) : undefined;
+            },
+            deleteImages,
+        };
+        const serviceWithImageStorage = new BookmarkService(repository, undefined, imageStorage);
+        const created = await serviceWithImageStorage.createCollection({
+            name: "Images",
+            visibility: "public",
+        });
+        const imageKey = `collections/${created.collection.id}/images/first.png`;
+        imageStorage.createUploadUrl = async () => ({
+            uploadUrl: "https://filebase.test/upload",
+            imageUrl: `https://signed.filebase.test/${imageKey}`,
+            imageKey,
+        });
+        const note = await serviceWithImageStorage.createNote(
+            created.collection.id,
+            {
+                title: "Image note",
+                content: {
+                    ops: [{ insert: { image: `filebase://${imageKey}` } }, { insert: "\\n" }],
+                },
+            },
+            created.accessToken,
+        );
+
+        await serviceWithImageStorage.updateNote(
+            created.collection.id,
+            note.id,
+            { content: { ops: [{ insert: "Image removed.\\n" }] } },
+            created.accessToken,
+        );
+        expect(deleteImages).toHaveBeenLastCalledWith([imageKey]);
+
+        const secondNote = await serviceWithImageStorage.createNote(
+            created.collection.id,
+            {
+                title: "Another image note",
+                content: {
+                    ops: [{ insert: { image: `filebase://${imageKey}` } }, { insert: "\\n" }],
+                },
+            },
+            created.accessToken,
+        );
+        await serviceWithImageStorage.deleteNote(
+            created.collection.id,
+            secondNote.id,
+            created.accessToken,
+        );
+        expect(deleteImages).toHaveBeenLastCalledWith([imageKey]);
     });
 });

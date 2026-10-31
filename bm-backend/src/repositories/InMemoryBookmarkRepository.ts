@@ -3,8 +3,11 @@ import { hashPassword } from "../security/passwords.js";
 import type { BookmarkRepository } from "./BookmarkRepository.js";
 import type {
     CollectionSession,
+    CollectionNote,
+    NoteComment,
     SavedLink,
     StoredCollection,
+    UpdateNoteInput,
     UpdateCollectionInput,
 } from "../types/domain.js";
 
@@ -12,6 +15,8 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
     private readonly collections = new Map<string, StoredCollection>();
     private readonly links = new Map<string, SavedLink>();
     private readonly sessions = new Map<string, CollectionSession>();
+    private readonly notes = new Map<string, CollectionNote>();
+    private readonly comments = new Map<string, NoteComment>();
 
     constructor(options: { seed?: boolean } = {}) {
         if (options.seed !== false) this.seedDesignCollection();
@@ -94,6 +99,15 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
             if (link.collectionId === id) this.links.delete(linkId);
         for (const [sessionId, session] of this.sessions)
             if (session.collectionId === id) this.sessions.delete(sessionId);
+        const noteIds = new Set<string>();
+        for (const [noteId, note] of this.notes) {
+            if (note.collectionId === id) {
+                noteIds.add(noteId);
+                this.notes.delete(noteId);
+            }
+        }
+        for (const [commentId, comment] of this.comments)
+            if (noteIds.has(comment.noteId)) this.comments.delete(commentId);
         return true;
     }
 
@@ -110,6 +124,75 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
     async deleteLink(collectionId: string, linkId: string) {
         const link = this.links.get(linkId);
         return link?.collectionId === collectionId ? this.links.delete(linkId) : false;
+    }
+
+    async listNotes(collectionId: string) {
+        return [...this.notes.values()]
+            .filter((note) => note.collectionId === collectionId)
+            .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    }
+
+    async createNote(input: Omit<CollectionNote, "id" | "createdAt" | "updatedAt">) {
+        const now = new Date().toISOString();
+        const note: CollectionNote = { id: randomUUID(), ...input, createdAt: now, updatedAt: now };
+        this.notes.set(note.id, note);
+        return note;
+    }
+
+    async findNote(collectionId: string, noteId: string) {
+        const note = this.notes.get(noteId);
+        return note?.collectionId === collectionId ? note : undefined;
+    }
+
+    async updateNote(collectionId: string, noteId: string, changes: UpdateNoteInput) {
+        const current = await this.findNote(collectionId, noteId);
+        if (!current) return undefined;
+        const updated: CollectionNote = {
+            ...current,
+            ...changes,
+            updatedAt: new Date().toISOString(),
+        };
+        this.notes.set(noteId, updated);
+        return updated;
+    }
+
+    async deleteNote(collectionId: string, noteId: string) {
+        const note = await this.findNote(collectionId, noteId);
+        if (!note) return false;
+        this.notes.delete(noteId);
+        for (const [commentId, comment] of this.comments)
+            if (comment.noteId === noteId) this.comments.delete(commentId);
+        return true;
+    }
+
+    async listComments(noteId: string) {
+        return [...this.comments.values()]
+            .filter((comment) => comment.noteId === noteId)
+            .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    }
+
+    async createComment(input: Omit<NoteComment, "id" | "createdAt">) {
+        const comment: NoteComment = {
+            id: randomUUID(),
+            ...input,
+            createdAt: new Date().toISOString(),
+        };
+        this.comments.set(comment.id, comment);
+        return comment;
+    }
+
+    async updateComment(noteId: string, commentId: string, body: string) {
+        const current = this.comments.get(commentId);
+        if (!current || current.noteId !== noteId) return undefined;
+        const updated = { ...current, body };
+        this.comments.set(commentId, updated);
+        return updated;
+    }
+
+    async deleteComment(noteId: string, commentId: string) {
+        const current = this.comments.get(commentId);
+        if (!current || current.noteId !== noteId) return false;
+        return this.comments.delete(commentId);
     }
 
     async createSession(input: Omit<CollectionSession, "id" | "createdAt">) {

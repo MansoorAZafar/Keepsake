@@ -76,3 +76,7 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/bookmark-manager-backend:${{ github.ref_name }}
             ${{ secrets.DOCKERHUB_USERNAME }}/bookmark-manager-backend:latest
+
+      - name: "Trigger Deploy Hook"
+        run: |
+          curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}"

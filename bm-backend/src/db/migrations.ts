@@ -37,6 +37,26 @@ CREATE TABLE collection_sessions (
 CREATE INDEX collection_sessions_collection_idx ON collection_sessions(collection_id);
 `;
 
+const NOTES_SCHEMA = `
+CREATE TABLE notes (
+    id TEXT PRIMARY KEY,
+    collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    content JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX notes_collection_created_at_idx ON notes(collection_id, created_at DESC);
+
+CREATE TABLE note_comments (
+    id TEXT PRIMARY KEY,
+    note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+    body TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX note_comments_note_created_at_idx ON note_comments(note_id, created_at ASC);
+`;
+
 /** Applies schema changes once, serializing concurrent app starts through a transaction lock. */
 export async function runMigrations(pool: Pool): Promise<void> {
     const client = await pool.connect();
@@ -55,6 +75,13 @@ export async function runMigrations(pool: Pool): Promise<void> {
         if (rows.length === 0) {
             await client.query(INITIAL_SCHEMA);
             await client.query("INSERT INTO schema_migrations (version) VALUES (1)");
+        }
+        const { rows: noteMigration } = await client.query<{ version: number }>(
+            "SELECT version FROM schema_migrations WHERE version = 2",
+        );
+        if (noteMigration.length === 0) {
+            await client.query(NOTES_SCHEMA);
+            await client.query("INSERT INTO schema_migrations (version) VALUES (2)");
         }
         await client.query("COMMIT");
     } catch (error) {
