@@ -1,0 +1,15 @@
+{
+    "CORSRules": [
+        {
+            "AllowedOrigins": [
+                "http://localhost:5173",
+                "https://bm-frontend-fyewijiep-huhs-projects-9b2b1373.vercel.app",
+                "https://bm-frontend-eta.vercel.app"
+            ],
+            "AllowedMethods": ["PUT", "GET", "HEAD"],
+            "AllowedHeaders": ["*"],
+            "ExposeHeaders": ["ETag"],
+            "MaxAgeSeconds": 3000
+        }
+    ]
+}

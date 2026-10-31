@@ -7,16 +7,21 @@ import type { BookmarkRepository } from "./repositories/BookmarkRepository.js";
 import { BookmarkService } from "./services/BookmarkService.js";
 import { BookmarkController } from "./controllers/BookmarkController.js";
 import { createBookmarkRouter } from "./routes/bookmarkRoutes.js";
+import { FilebaseStorage } from "./services/FilebaseStorage.js";
+import type { NoteImageStorage } from "./services/FilebaseStorage.js";
 
-export function createApp(repository: BookmarkRepository = new InMemoryBookmarkRepository()) {
+export function createApp(
+    repository: BookmarkRepository = new InMemoryBookmarkRepository(),
+    imageStorage: NoteImageStorage | undefined = FilebaseStorage.fromEnvironment(),
+) {
     const app = express();
-    const service = new BookmarkService(repository);
+    const service = new BookmarkService(repository, undefined, imageStorage);
     const controller = new BookmarkController(service);
 
     const allowedOrigins = process.env.FRONTEND_ORIGIN?.split(",") ?? ["http://localhost:5173"];
 
     app.use(cors({ origin: allowedOrigins }));
-    app.use(express.json({ limit: "32kb" }));
+    app.use(express.json({ limit: "512kb" }));
     app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
     app.use("/api", createBookmarkRouter(controller));
     app.use((_req, _res, next) => next(new HttpError(404, "Route not found")));

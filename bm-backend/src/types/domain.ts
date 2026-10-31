@@ -25,6 +25,36 @@ export interface SavedLink {
     createdAt: string;
 }
 
+export interface NoteDeltaOperation {
+    insert: string | { image: string };
+    attributes?: Record<string, string | number | boolean>;
+}
+
+export interface NoteDelta {
+    ops: NoteDeltaOperation[];
+}
+
+export interface CollectionNote {
+    id: string;
+    collectionId: string;
+    title: string;
+    content: NoteDelta;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface NoteComment {
+    id: string;
+    noteId: string;
+    body: string;
+    createdAt: string;
+}
+
+export interface UpdateNoteInput {
+    title?: string;
+    content?: NoteDelta;
+}
+
 export interface CollectionSession {
     id: string;
     collectionId: string;
