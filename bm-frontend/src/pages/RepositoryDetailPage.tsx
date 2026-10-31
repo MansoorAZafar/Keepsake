@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
 import Alert from "@mui/material/Alert";
+import Accordion from "@mui/material/Accordion";
+import AccordionDetails from "@mui/material/AccordionDetails";
+import AccordionSummary from "@mui/material/AccordionSummary";
 import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -17,9 +20,11 @@ import AutoStoriesOutlinedIcon from "@mui/icons-material/AutoStoriesOutlined";
 import DeleteForeverOutlinedIcon from "@mui/icons-material/DeleteForeverOutlined";
 import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
+import NoteAddRoundedIcon from "@mui/icons-material/NoteAddRounded";
 import { api, ApiError } from "../lib/api";
 import { filterAndGroupLinks } from "../lib/linkGrouping";
 import { readSession, removeSession, writeSession } from "../lib/sessions";
@@ -28,13 +33,26 @@ import { DeleteCollectionDialog } from "../components/DeleteCollectionDialog";
 import { AddLinkDialog } from "../components/AddLinkDialog";
 import { ConfirmDeleteLinkDialog } from "../components/ConfirmDeleteLinkDialog";
 import { EditCollectionDialog } from "../components/EditCollectionDialog";
+import { CreateNoteDialog } from "../components/CreateNoteDialog";
+import { NoteCard } from "../components/NoteCard";
 import type {
     CollectionSession,
+    CollectionNote,
     CollectionSummary,
+    CreateNoteInput,
     CreateLinkInput,
     SavedLink,
+    NoteComment,
     UpdateCollectionInput,
+    UpdateNoteInput,
+    UploadedNoteImage,
 } from "../types/api";
+
+function noteSearchText(note: CollectionNote): string {
+    return `${note.title} ${note.content.ops
+        .map((operation) => (typeof operation.insert === "string" ? operation.insert : ""))
+        .join(" ")}`.toLowerCase();
+}
 
 export function RepositoryDetailPage() {
     const navigate = useNavigate();
@@ -69,6 +87,7 @@ function CollectionDetail({
         readSession(collectionId),
     );
     const [links, setLinks] = useState<SavedLink[]>([]);
+    const [notes, setNotes] = useState<CollectionNote[]>([]);
     const [query, setQuery] = useState("");
     const [password, setPassword] = useState("");
     const [unlockError, setUnlockError] = useState("");
@@ -76,8 +95,11 @@ function CollectionDetail({
     const [linkLoadAttempt, setLinkLoadAttempt] = useState(0);
     const [isLoadingCollection, setIsLoadingCollection] = useState(true);
     const [isLoadingLinks, setIsLoadingLinks] = useState(true);
+    const [isLoadingNotes, setIsLoadingNotes] = useState(true);
     const [isUnlocking, setIsUnlocking] = useState(false);
     const [isAddingLink, setIsAddingLink] = useState(false);
+    const [isAddingNote, setIsAddingNote] = useState(false);
+    const [noteToEdit, setNoteToEdit] = useState<CollectionNote | null>(null);
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
     const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
     const [linkPendingDelete, setLinkPendingDelete] = useState<SavedLink | null>(null);
@@ -107,9 +129,15 @@ function CollectionDetail({
     useEffect(() => {
         if (!session && collection?.visibility !== "public") return;
         let isCurrent = true;
-        api.listLinks(collectionId, session?.accessToken)
-            .then((result) => {
-                if (isCurrent) setLinks(result);
+        Promise.all([
+            api.listLinks(collectionId, session?.accessToken),
+            api.listNotes(collectionId, session?.accessToken),
+        ])
+            .then(([savedLinks, savedNotes]) => {
+                if (isCurrent) {
+                    setLinks(savedLinks);
+                    setNotes(savedNotes);
+                }
             })
             .catch((error: unknown) => {
                 if (!isCurrent) return;
@@ -121,6 +149,7 @@ function CollectionDetail({
                     removeSession(collectionId);
                     setSession(null);
                     setLinks([]);
+                    setNotes([]);
                     setUnlockError("Your session expired. Enter the collection password again.");
                 } else
                     setPageError(
@@ -129,6 +158,7 @@ function CollectionDetail({
             })
             .finally(() => {
                 if (isCurrent) setIsLoadingLinks(false);
+                if (isCurrent) setIsLoadingNotes(false);
             });
         return () => {
             isCurrent = false;
@@ -136,6 +166,11 @@ function CollectionDetail({
     }, [collectionId, session, collection?.visibility, linkLoadAttempt]);
 
     const groups = useMemo(() => filterAndGroupLinks(links, query), [links, query]);
+    const matchingNotes = useMemo(() => {
+        const normalizedQuery = query.trim().toLowerCase();
+        return notes.filter((note) => noteSearchText(note).includes(normalizedQuery));
+    }, [notes, query]);
+    const visibleLinkCount = groups.reduce((count, group) => count + group.links.length, 0);
 
     async function unlockCollection(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
@@ -146,6 +181,7 @@ function CollectionDetail({
             const createdSession = await api.createSession(collectionId, password);
             writeSession(collectionId, createdSession);
             setIsLoadingLinks(true);
+            setIsLoadingNotes(true);
             setSession(createdSession);
             setPassword("");
         } catch (error) {
@@ -163,6 +199,98 @@ function CollectionDetail({
         if (!session) throw new Error("Unlock the collection before adding a link.");
         const saved = await api.createLink(collectionId, session.accessToken, input);
         setLinks((current) => [saved, ...current]);
+    }
+
+    async function saveNote(input: CreateNoteInput) {
+        if (!session) throw new Error("Unlock the collection before adding notes.");
+        const saved = await api.createNote(collectionId, session.accessToken, input);
+        setNotes((current) => [saved, ...current]);
+    }
+
+    async function updateNote(input: UpdateNoteInput) {
+        if (!session || !noteToEdit) throw new Error("Unlock the collection before editing notes.");
+        const updated = await api.updateNote(
+            collectionId,
+            noteToEdit.id,
+            session.accessToken,
+            input,
+        );
+        setNotes((current) => current.map((note) => (note.id === updated.id ? updated : note)));
+        setNoteToEdit(null);
+    }
+
+    async function deleteNote(noteId: string) {
+        if (!session) throw new Error("Unlock the collection before deleting notes.");
+        await api.deleteNote(collectionId, noteId, session.accessToken);
+        setNotes((current) => current.filter((note) => note.id !== noteId));
+    }
+
+    async function uploadNoteImage(
+        image: File,
+        signal: AbortSignal,
+        onImageKeyIssued: (imageKey: string) => void,
+    ): Promise<UploadedNoteImage> {
+        if (!session) throw new Error("Unlock the collection before uploading images.");
+        const upload = await api.createNoteImageUpload(
+            collectionId,
+            session.accessToken,
+            {
+                contentType: image.type,
+                size: image.size,
+            },
+            signal,
+        );
+        onImageKeyIssued(upload.imageKey);
+        let response: Response;
+        try {
+            response = await fetch(upload.uploadUrl, {
+                method: "PUT",
+                headers: { "Content-Type": image.type },
+                body: image,
+                signal,
+            });
+        } catch (cause) {
+            await api.deleteUnusedNoteImage(collectionId, session.accessToken, upload.imageKey);
+            if (signal.aborted) throw new Error("Image upload was cancelled.");
+            throw new Error(
+                cause instanceof Error
+                    ? "Could not reach Filebase. Check the bucket CORS settings and try again."
+                    : "The image upload failed.",
+            );
+        }
+        if (!response.ok) {
+            await api.deleteUnusedNoteImage(collectionId, session.accessToken, upload.imageKey);
+            throw new Error(`Filebase rejected the image upload (${response.status}).`);
+        }
+        return { imageUrl: upload.imageUrl, imageKey: upload.imageKey };
+    }
+
+    async function deleteUnusedNoteImage(imageKey: string) {
+        if (!session) throw new Error("Unlock the collection before deleting images.");
+        await api.deleteUnusedNoteImage(collectionId, session.accessToken, imageKey);
+    }
+
+    function loadNoteComments(noteId: string): Promise<NoteComment[]> {
+        return api.listNoteComments(collectionId, noteId, session?.accessToken);
+    }
+
+    async function addNoteComment(noteId: string, body: string): Promise<NoteComment> {
+        if (!session) throw new Error("Unlock the collection before replying.");
+        return api.createNoteComment(collectionId, noteId, session.accessToken, body);
+    }
+
+    async function updateNoteComment(
+        noteId: string,
+        commentId: string,
+        body: string,
+    ): Promise<NoteComment> {
+        if (!session) throw new Error("Unlock the collection before editing replies.");
+        return api.updateNoteComment(collectionId, noteId, commentId, session.accessToken, body);
+    }
+
+    async function deleteNoteComment(noteId: string, commentId: string): Promise<void> {
+        if (!session) throw new Error("Unlock the collection before deleting replies.");
+        await api.deleteNoteComment(collectionId, noteId, commentId, session.accessToken);
     }
 
     async function updateCollection(input: UpdateCollectionInput) {
@@ -187,20 +315,45 @@ function CollectionDetail({
         removeSession(collectionId);
         setSession(null);
         setLinks([]);
+        setNotes([]);
         setPageError("");
         setIsLoadingLinks(collection?.visibility === "public");
+        setIsLoadingNotes(collection?.visibility === "public");
     }
 
     function retryLinkLoad() {
         setPageError("");
         setIsLoadingLinks(true);
+        setIsLoadingNotes(true);
         setLinkLoadAttempt((attempt) => attempt + 1);
     }
 
     function downloadJson() {
-        const blob = new Blob([JSON.stringify({ collection, links }, null, 2)], {
-            type: "application/json",
-        });
+        const backupNotes = notes.map((note) => ({
+            ...note,
+            content: {
+                ops: note.content.ops.map((operation) => {
+                    if (typeof operation.insert === "string") return operation;
+                    try {
+                        const imageUrl = new URL(operation.insert.image);
+                        const objectKey = imageUrl.pathname
+                            .split("/")
+                            .slice(2)
+                            .map(decodeURIComponent)
+                            .join("/");
+                        return { ...operation, insert: { image: `filebase://${objectKey}` } };
+                    } catch {
+                        return operation;
+                    }
+                }),
+            },
+        }));
+        const blob = new Blob(
+            [JSON.stringify({ collection, links, notes: backupNotes }, null, 2)],
+            {
+                type: "application/json",
+            },
+        );
         const url = URL.createObjectURL(blob);
         const anchor = document.createElement("a");
         anchor.href = url;
@@ -392,7 +545,7 @@ function CollectionDetail({
                                 sx={{ alignItems: "center", flexWrap: "nowrap", maxWidth: "100%" }}
                             >
                                 <Chip
-                                    label={`${links.length} saved`}
+                                    label={`${links.length + notes.length} saved`}
                                     size="small"
                                     sx={{ flex: "0 0 auto" }}
                                 />
@@ -409,6 +562,21 @@ function CollectionDetail({
                                 >
                                     Download JSON
                                 </Button>
+                                {session && (
+                                    <Button
+                                        onClick={() => setIsAddingNote(true)}
+                                        startIcon={<NoteAddRoundedIcon />}
+                                        variant="outlined"
+                                        size="small"
+                                        sx={{
+                                            flex: "0 0 auto",
+                                            minWidth: "max-content",
+                                            whiteSpace: "nowrap",
+                                        }}
+                                    >
+                                        Add note
+                                    </Button>
+                                )}
                                 {session && (
                                     <Button
                                         onClick={() => setIsAddingLink(true)}
@@ -474,33 +642,85 @@ function CollectionDetail({
                                 },
                             }}
                         />
-                        {isLoadingLinks ? (
+                        {isLoadingLinks || isLoadingNotes ? (
                             <Box className="loading-state">
                                 <CircularProgress size={26} />
-                                <Typography color="text.secondary">Loading saved links…</Typography>
+                                <Typography color="text.secondary">
+                                    Loading this collection…
+                                </Typography>
                             </Box>
-                        ) : groups.length > 0 ? (
-                            <DomainGroups
-                                groups={groups}
-                                onRemoveLink={session ? requestLinkRemoval : undefined}
-                            />
                         ) : (
-                            <Box className="empty-state">
-                                <Typography className="empty-symbol">⌕</Typography>
-                                <Typography variant="h3">
-                                    {links.length === 0
-                                        ? "No links saved yet"
-                                        : "No matching links"}
-                                </Typography>
-                                <Typography className="section-subtitle">
-                                    {links.length === 0
-                                        ? "Add a link to start building this collection."
-                                        : "Try another title, URL, or domain."}
-                                </Typography>
-                                {query && (
-                                    <Button onClick={() => setQuery("")}>Clear search</Button>
-                                )}
-                            </Box>
+                            <Stack className="saved-content-sections" spacing={1.5}>
+                                <Accordion defaultExpanded disableGutters>
+                                    <AccordionSummary expandIcon={<ExpandMoreRoundedIcon />}>
+                                        <Stack
+                                            direction="row"
+                                            spacing={1}
+                                            sx={{ alignItems: "center" }}
+                                        >
+                                            <Typography component="h3" variant="h6">
+                                                Notes
+                                            </Typography>
+                                            <Chip size="small" label={matchingNotes.length} />
+                                        </Stack>
+                                    </AccordionSummary>
+                                    <AccordionDetails>
+                                        {matchingNotes.length > 0 ? (
+                                            <Stack spacing={1.5}>
+                                                {matchingNotes.map((note) => (
+                                                    <NoteCard
+                                                        key={note.id}
+                                                        note={note}
+                                                        canReply={Boolean(session)}
+                                                        onLoadComments={loadNoteComments}
+                                                        onAddComment={addNoteComment}
+                                                        onUpdateNote={setNoteToEdit}
+                                                        onDeleteNote={deleteNote}
+                                                        onUpdateComment={updateNoteComment}
+                                                        onDeleteComment={deleteNoteComment}
+                                                    />
+                                                ))}
+                                            </Stack>
+                                        ) : (
+                                            <Typography color="text.secondary">
+                                                {notes.length === 0
+                                                    ? "No notes yet. Add a note to keep context with your links."
+                                                    : "No matching notes. Try searching another title or phrase."}
+                                            </Typography>
+                                        )}
+                                    </AccordionDetails>
+                                </Accordion>
+                                <Accordion defaultExpanded disableGutters>
+                                    <AccordionSummary expandIcon={<ExpandMoreRoundedIcon />}>
+                                        <Stack
+                                            direction="row"
+                                            spacing={1}
+                                            sx={{ alignItems: "center" }}
+                                        >
+                                            <Typography component="h3" variant="h6">
+                                                Links
+                                            </Typography>
+                                            <Chip size="small" label={visibleLinkCount} />
+                                        </Stack>
+                                    </AccordionSummary>
+                                    <AccordionDetails>
+                                        {groups.length > 0 ? (
+                                            <DomainGroups
+                                                groups={groups}
+                                                onRemoveLink={
+                                                    session ? requestLinkRemoval : undefined
+                                                }
+                                            />
+                                        ) : (
+                                            <Typography color="text.secondary">
+                                                {links.length === 0
+                                                    ? "No links saved yet. Add a link to start building this collection."
+                                                    : "No matching links. Try another title, URL, or domain."}
+                                            </Typography>
+                                        )}
+                                    </AccordionDetails>
+                                </Accordion>
+                            </Stack>
                         )}
                     </Box>
                 )}
@@ -523,6 +743,27 @@ function CollectionDetail({
                 onClose={() => setIsAddingLink(false)}
                 onSave={saveLink}
             />
+            {isAddingNote && session && (
+                <CreateNoteDialog
+                    onClose={() => setIsAddingNote(false)}
+                    onSave={saveNote}
+                    onUploadImage={uploadNoteImage}
+                    onDeleteUploadedImage={deleteUnusedNoteImage}
+                />
+            )}
+            {noteToEdit && session && (
+                <CreateNoteDialog
+                    key={noteToEdit.id}
+                    initialTitle={noteToEdit.title}
+                    initialContent={noteToEdit.content}
+                    dialogTitle="Edit note"
+                    saveLabel="Save changes"
+                    onClose={() => setNoteToEdit(null)}
+                    onSave={updateNote}
+                    onUploadImage={uploadNoteImage}
+                    onDeleteUploadedImage={deleteUnusedNoteImage}
+                />
+            )}
             {isEditDialogOpen && session && (
                 <EditCollectionDialog
                     name={collection.name}
