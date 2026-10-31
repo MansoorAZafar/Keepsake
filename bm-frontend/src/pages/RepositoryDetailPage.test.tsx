@@ -246,9 +246,9 @@ describe("RepositoryDetailPage", () => {
         );
         await user.click(screen.getByRole("button", { name: "Post" }));
         expect(await screen.findByText("I checked these today.")).toBeInTheDocument();
-        await user.click(screen.getByRole("button", { name: "Hide reply" }));
+        await user.click(screen.getByRole("button", { name: "Hide comments" }));
         expect(screen.queryByText("I checked these today.")).not.toBeInTheDocument();
-        await user.click(screen.getByRole("button", { name: "Show reply" }));
+        await user.click(screen.getByRole("button", { name: "Show comments" }));
         expect(screen.getByText("I checked these today.")).toBeInTheDocument();
 
         await user.click(screen.getByRole("button", { name: "Edit reply" }));

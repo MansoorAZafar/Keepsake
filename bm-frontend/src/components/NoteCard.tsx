@@ -159,20 +159,15 @@ export function NoteCard({
                     )}
                 </Stack>
 
-
                 <IconButton
                     size="small"
-                    sx={{ ml: "auto !important", flexShrink: 0, }}
+                    sx={{ ml: "auto !important", flexShrink: 0 }}
                     aria-label={isCommentsOpen ? "Hide comments" : "Show comments"}
                     aria-expanded={isCommentsOpen}
                     aria-controls={`comments-${note.id}`}
                     onClick={() => void toggleComments()}
                 >
-                    {isCommentsOpen ? (
-                        <ExpandLessRoundedIcon />
-                    ) : (
-                        <ExpandMoreRoundedIcon />
-                    )}
+                    {isCommentsOpen ? <ExpandLessRoundedIcon /> : <ExpandMoreRoundedIcon />}
                 </IconButton>
             </CardActions>
             {isCommentsOpen && (
